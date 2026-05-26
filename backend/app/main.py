@@ -111,6 +111,7 @@ from app.models import (
     WatchlistRequest,
 )
 from app.services import database, fund_service, positions, stock_service
+from app.services.mysql_database import get_connection
 from app.services.position_service import (
     add_operation,
     get_operations,
@@ -132,6 +133,9 @@ from app.services.llm_settings import (
     update_llm_settings,
 )
 from app.services.research_service import analyze_fund_research
+
+import logging
+logger = logging.getLogger(__name__)
 
 CONFIG_PATH = DEFAULT_CONFIG_PATH
 LAST_STATE: dict[str, Any] | None = None
@@ -947,6 +951,87 @@ async def put_watchlist_item(
     response_model=list[FundHoldingItem],
     summary="Get fund holdings with current NAV and P&L",
 )
+async def get_fund_holdings(config: Config = Depends(get_config)) -> list[FundHoldingItem]:
+    """Return fund watchlist items enriched with current NAV and P&L.
+
+    For each fund in user_watchlist (MySQL):
+    1. Fetch current NAV from fund_service
+    2. Calculate daily return, total P&L, and P&L percentage
+    3. Return enriched FundHoldingItem list
+    """
+    try:
+        with get_connection(
+            host=config.mysql.host,
+            port=config.mysql.port,
+            user=config.mysql.user,
+            password=config.mysql.password,
+            database=config.mysql.database,
+            pool_size=config.mysql.pool_size,
+        ) as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(
+                "SELECT id, code, name, purchase_amount, purchase_nav, "
+                "purchase_date, shares, current_nav, current_nav_date, "
+                "daily_return, total_pnl, total_pnl_pct "
+                "FROM user_watchlist WHERE item_type = 'fund' ORDER BY sort_order, added_at"
+            )
+            rows = cursor.fetchall()
+            cursor.close()
+    except Exception as exc:
+        logger.warning("Failed to read fund holdings from MySQL: %s", exc)
+        rows = []
+
+    results: list[FundHoldingItem] = []
+    for row in rows:
+        code = row.get("code", "")
+        current_nav = row.get("current_nav")
+        daily_return = row.get("daily_return")
+        total_pnl = row.get("total_pnl")
+        total_pnl_pct = row.get("total_pnl_pct")
+        data_source = "mysql"
+
+        # Try to fetch live NAV if we have a fund code
+        if code:
+            try:
+                nav_data = fund_service.fetch_fund_nav(code)
+                if nav_data and nav_data.nav is not None:
+                    current_nav = nav_data.nav
+                    daily_return = nav_data.daily_return
+                    data_source = nav_data.data_source or "akshare"
+
+                    # Calculate P&L if we have purchase info
+                    purchase_nav = row.get("purchase_nav")
+                    shares = row.get("shares")
+                    purchase_amount = row.get("purchase_amount")
+
+                    if purchase_nav and shares and current_nav:
+                        total_pnl = round((current_nav - purchase_nav) * shares, 2)
+                        if purchase_nav > 0:
+                            total_pnl_pct = round(((current_nav - purchase_nav) / purchase_nav) * 100, 4)
+                    elif purchase_amount and purchase_nav and current_nav and purchase_nav > 0:
+                        estimated_shares = purchase_amount / purchase_nav
+                        total_pnl = round((current_nav - purchase_nav) * estimated_shares, 2)
+                        total_pnl_pct = round(((current_nav - purchase_nav) / purchase_nav) * 100, 4)
+            except Exception as exc:
+                logger.debug("Failed to fetch live NAV for %s: %s", code, exc)
+
+        results.append(FundHoldingItem(
+            id=row.get("id", 0),
+            code=code,
+            name=row.get("name"),
+            purchase_amount=row.get("purchase_amount"),
+            purchase_nav=row.get("purchase_nav"),
+            purchase_date=str(row.get("purchase_date")) if row.get("purchase_date") else None,
+            shares=row.get("shares"),
+            current_nav=current_nav,
+            current_nav_date=str(row.get("current_nav_date")) if row.get("current_nav_date") else None,
+            daily_return=daily_return,
+            total_pnl=total_pnl,
+            total_pnl_pct=total_pnl_pct,
+            data_source=data_source,
+        ))
+
+    return results
 
 
 @app.post(
@@ -1032,66 +1117,3 @@ async def get_position_summary(
             detail=f"Failed to fetch position summary: {exc}",
         ) from exc
     return PositionSummaryResponse(**result)
-async def get_fund_holdings(
-    config: Config = Depends(get_config),
-) -> list[FundHoldingItem]:
-    """Return fund watchlist items enriched with current NAV and P&L calculations."""
-    conn = database.connect(config.app.database_path)
-    try:
-        database.init_db(conn)
-        fund_items = get_watchlist(conn, item_type="fund")
-    finally:
-        conn.close()
-
-    if not fund_items:
-        return []
-
-    # Fetch current NAV for all fund codes
-    codes = [item["code"] for item in fund_items]
-    try:
-        navs = await run_in_threadpool(fund_service.fetch_fund_nav_batch, codes)
-        nav_map = {nav.fund_code: nav for nav in navs}
-    except Exception:
-        nav_map = {}
-
-    result = []
-    for item in fund_items:
-        code = item["code"]
-        nav_data = nav_map.get(code)
-
-        current_nav = nav_data.nav if nav_data else None
-        daily_return = nav_data.daily_return if nav_data else None
-        nav_date = nav_data.nav_date if nav_data else None
-        data_source = nav_data.data_source if nav_data else "unknown"
-
-        # Calculate total P&L
-        total_pnl = None
-        total_pnl_pct = None
-        purchase_nav = item.get("purchase_nav")
-        shares = item.get("shares")
-        purchase_amount = item.get("purchase_amount")
-
-        if current_nav and purchase_nav and purchase_nav > 0:
-            total_pnl_pct = round((current_nav - purchase_nav) / purchase_nav * 100, 4)
-            if shares and shares > 0:
-                total_pnl = round((current_nav - purchase_nav) * shares, 2)
-            elif purchase_amount and purchase_amount > 0:
-                total_pnl = round(purchase_amount * total_pnl_pct / 100, 2)
-
-        result.append(FundHoldingItem(
-            id=item["id"],
-            code=code,
-            name=item.get("name"),
-            purchase_amount=purchase_amount,
-            purchase_nav=purchase_nav,
-            purchase_date=item.get("purchase_date"),
-            shares=shares,
-            current_nav=current_nav,
-            current_nav_date=nav_date,
-            daily_return=daily_return,
-            total_pnl=total_pnl,
-            total_pnl_pct=total_pnl_pct,
-            data_source=data_source,
-        ))
-
-    return result
