@@ -22,12 +22,12 @@ class MarketConfig(BaseModel):
 
 class LLMConfig(BaseModel):
     base_url: str = Field(default="https://open.bigmodel.cn", min_length=1, max_length=500)
-    generate_path: str = Field(default="/api/paas/v4", min_length=1, max_length=255)
+    generate_path: str = Field(default="/api/paas/v4", max_length=255)
     model: str = Field(default="glm-4-flash", min_length=1, max_length=200)
     timeout_seconds: float = Field(default=30.0, gt=0, le=600)
     api_key: str | None = Field(default=None, repr=False)
 
-    @field_validator("base_url", "generate_path", "model", mode="before")
+    @field_validator("base_url", "model", mode="before")
     @classmethod
     def strip_required_strings(cls, value: str) -> str:
         if not isinstance(value, str):
@@ -36,6 +36,13 @@ class LLMConfig(BaseModel):
         if not stripped:
             raise ValueError("LLM settings fields must not be blank")
         return stripped
+
+    @field_validator("generate_path", mode="before")
+    @classmethod
+    def strip_generate_path(cls, value: str) -> str:
+        if not isinstance(value, str):
+            raise TypeError("generate_path must be a string")
+        return value.strip()
 
     @field_validator("api_key", mode="before")
     @classmethod
@@ -49,7 +56,7 @@ class LLMConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_generate_path(self) -> "LLMConfig":
-        if not self.generate_path.startswith("/"):
+        if self.generate_path and not self.generate_path.startswith("/"):
             raise ValueError("ollama.generate_path must start with '/'")
         return self
 
@@ -94,6 +101,15 @@ class FallbackConfig(BaseModel):
     timeout_seconds: int = 10
 
 
+class MySQLConfig(BaseModel):
+    host: str = "localhost"
+    port: int = Field(default=3306, ge=1, le=65535)
+    user: str = "root"
+    password: str = ""
+    database: str = "Finnacequant"
+    pool_size: int = Field(default=5, ge=1, le=50)
+
+
 class DataSourceConfig(BaseModel):
     proxy: ProxyConfig = Field(default_factory=ProxyConfig)
     fallback: FallbackConfig = Field(default_factory=FallbackConfig)
@@ -106,9 +122,16 @@ class Config(BaseModel):
     app: AppConfig
     market: MarketConfig = Field(default_factory=MarketConfig)
     ollama: LLMConfig = Field(default_factory=LLMConfig)
+    deepseek: LLMConfig = Field(default_factory=lambda: LLMConfig(
+        base_url="http://model.mify.ai.srv/v1",
+        generate_path="",
+        model="deepseek-chat",
+        timeout_seconds=60,
+    ))
     confidence_thresholds: ConfidenceThresholds = Field(default_factory=ConfidenceThresholds)
     assets: dict[str, AssetConfig] = Field(default_factory=dict)
     webhook: WebhookConfig = Field(default_factory=WebhookConfig)
+    mysql: MySQLConfig = Field(default_factory=MySQLConfig)
     data_sources: DataSourceConfig = Field(default_factory=DataSourceConfig)
 
     @property

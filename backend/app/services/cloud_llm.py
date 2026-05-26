@@ -244,6 +244,22 @@ async def generate_with_cloud_llm(
         )
 
 
+async def generate_with_deepseek(config: Config, prompt: str) -> str:
+    """Generate text using DeepSeek config.
+
+    Falls back to the main LLM API key if DeepSeek-specific key is not set.
+    """
+    llm_config = config.deepseek
+    # Fallback: use main LLM's effective API key if DeepSeek key is empty
+    if not llm_config.api_key:
+        main_llm = get_effective_llm_config(config)
+        if main_llm.api_key:
+            llm_config = llm_config.model_copy(update={"api_key": main_llm.api_key})
+        else:
+            raise CloudLLMNoAPIKeyError("DeepSeek API key not configured")
+    return await _chat_completions_create(llm_config, prompt, allow_web_search_tools=False)
+
+
 async def test_cloud_llm_connection(config: Config) -> None:
     llm_config = get_effective_llm_config(config)
     try:

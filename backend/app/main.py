@@ -87,6 +87,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from app.config import DEFAULT_CONFIG_PATH, Config, LLMConfig, load_config
 from app.graph import run_once
 from app.models import (
+    AIWindRequest,
+    AIWindResponse,
     AnalysisHistoryResponse,
     FundAnalysisRequest,
     FundAnalysisResponse,
@@ -97,6 +99,9 @@ from app.models import (
     ImageParseResponse,
     MarketOverviewResponse,
     ParsedItem,
+    PositionOperationRequest,
+    PositionOperationResponse,
+    PositionSummaryResponse,
     SectorQuoteResponse,
     StockAnalysisRequest,
     StockAnalysisResponse,
@@ -106,6 +111,12 @@ from app.models import (
     WatchlistRequest,
 )
 from app.services import database, fund_service, positions, stock_service
+from app.services.position_service import (
+    add_operation,
+    get_operations,
+    get_summary,
+    sync_watchlist_item_to_mysql,
+)
 from app.services.watchlist_service import (
     add_to_watchlist,
     get_watchlist,
@@ -590,6 +601,62 @@ async def post_fund_analyze(
     return FundAnalysisResponse(**dataclasses.asdict(result))
 
 
+@app.get(
+    "/api/funds/nav-realtime",
+    response_model=list[FundNavResponse],
+    summary="Fetch real-time fund NAV (intraday refresh)",
+)
+async def get_fund_nav_realtime(
+    codes: str = Query(..., min_length=1, description="Comma-separated fund codes, e.g. 000510,008282"),
+    config: Config = Depends(get_config),
+) -> list[FundNavResponse]:
+    """Fetch minute-level real-time NAV for specified funds via AkShare."""
+    code_list = [c.strip() for c in codes.split(",") if c.strip()]
+    if not code_list:
+        raise HTTPException(status_code=400, detail="No valid fund codes provided")
+    try:
+        navs = await run_in_threadpool(fund_service.fetch_fund_nav_batch, code_list)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Fund NAV fetch failed: {exc}") from exc
+    return [FundNavResponse(**dataclasses.asdict(n)) for n in navs]
+
+
+@app.post(
+    "/api/funds/ai-wind",
+    response_model=AIWindResponse,
+    summary="AI wind vane: market sentiment and fund recommendations",
+)
+async def post_ai_wind(
+    request: AIWindRequest,
+    config: Config = Depends(get_config),
+) -> AIWindResponse:
+    """Run DeepSeek-powered AI wind vane analysis combining sector data and user holdings.
+
+    Returns hot sectors, fund operation recommendations, market sentiment score, and summary.
+    Results are cached for 300 seconds unless force_refresh is set.
+    """
+    from app.services.deepseek_wind_service import analyze_ai_wind
+
+    try:
+        result = await analyze_ai_wind(config, force_refresh=request.force_refresh)
+    except CloudLLMNoAPIKeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"DeepSeek API key not configured. Error: {exc}",
+        ) from exc
+    except CloudLLMError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return AIWindResponse(
+        hot_sectors=result.hot_sectors,
+        fund_recommendations=result.fund_recommendations,
+        market_sentiment=result.market_sentiment,
+        sentiment_score=result.sentiment_score,
+        summary=result.summary,
+        generated_at=result.generated_at,
+        cached=result.cached,
+    )
+
+
 # ---- Market Overview Endpoint ----
 
 
@@ -732,6 +799,22 @@ async def post_watchlist(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     finally:
         conn.close()
+    # Sync to MySQL for position operations
+    try:
+        sync_watchlist_item_to_mysql(
+            mysql_cfg=config.mysql,
+            item_type=item["item_type"],
+            code=item["code"],
+            name=item.get("name"),
+            purchase_amount=item.get("purchase_amount"),
+            purchase_nav=item.get("purchase_nav"),
+            purchase_date=item.get("purchase_date"),
+            shares=item.get("shares"),
+            added_at=item.get("added_at"),
+            sort_order=item.get("sort_order", 0),
+        )
+    except Exception as exc:
+        logger.warning("Failed to sync watchlist item to MySQL: %s", exc)
     return WatchlistItem(**item)
 
 
@@ -840,6 +923,22 @@ async def put_watchlist_item(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Watchlist item not found")
     finally:
         conn.close()
+    # Sync to MySQL for position operations
+    try:
+        sync_watchlist_item_to_mysql(
+            mysql_cfg=config.mysql,
+            item_type=found["item_type"],
+            code=found["code"],
+            name=found.get("name"),
+            purchase_amount=found.get("purchase_amount"),
+            purchase_nav=found.get("purchase_nav"),
+            purchase_date=found.get("purchase_date"),
+            shares=found.get("shares"),
+            added_at=found.get("added_at"),
+            sort_order=found.get("sort_order", 0),
+        )
+    except Exception as exc:
+        logger.warning("Failed to sync watchlist update to MySQL: %s", exc)
     return WatchlistItem(**found)
 
 
@@ -848,6 +947,91 @@ async def put_watchlist_item(
     response_model=list[FundHoldingItem],
     summary="Get fund holdings with current NAV and P&L",
 )
+
+
+@app.post(
+    "/api/watchlist/{item_id}/operations",
+    response_model=PositionOperationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Execute position operation (buy/sell/add/reduce)",
+)
+async def post_position_operation(
+    item_id: int,
+    request: PositionOperationRequest,
+    config: Config = Depends(get_config),
+) -> PositionOperationResponse:
+    """Execute a position operation on a watchlist item.
+
+    Supports buy, sell, add, reduce operations.
+    Automatically updates the watchlist item's shares and NAV.
+    """
+    try:
+        result = add_operation(
+            mysql_cfg=config.mysql,
+            watchlist_id=item_id,
+            operation_type=request.operation_type,
+            operation_amount=request.operation_amount,
+            operation_shares=request.operation_shares,
+            operation_nav=request.operation_nav,
+            note=request.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("Position operation failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Position operation failed: {exc}",
+        ) from exc
+    return PositionOperationResponse(**result)
+
+
+@app.get(
+    "/api/watchlist/{item_id}/operations",
+    response_model=list[PositionOperationResponse],
+    summary="Get position operation history",
+)
+async def get_position_operations(
+    item_id: int,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    config: Config = Depends(get_config),
+) -> list[PositionOperationResponse]:
+    """Return operation history for a specific watchlist item."""
+    try:
+        rows = get_operations(
+            mysql_cfg=config.mysql,
+            watchlist_id=item_id,
+            limit=limit,
+            offset=offset,
+        )
+    except Exception as exc:
+        logger.error("Failed to fetch operations: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch operations: {exc}",
+        ) from exc
+    return [PositionOperationResponse(**row) for row in rows]
+
+
+@app.get(
+    "/api/watchlist/summary",
+    response_model=PositionSummaryResponse,
+    summary="Get portfolio position summary",
+)
+async def get_position_summary(
+    config: Config = Depends(get_config),
+) -> PositionSummaryResponse:
+    """Return aggregated portfolio summary with per-item operation metadata."""
+    try:
+        result = get_summary(mysql_cfg=config.mysql)
+    except Exception as exc:
+        logger.error("Failed to fetch position summary: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch position summary: {exc}",
+        ) from exc
+    return PositionSummaryResponse(**result)
 async def get_fund_holdings(
     config: Config = Depends(get_config),
 ) -> list[FundHoldingItem]:

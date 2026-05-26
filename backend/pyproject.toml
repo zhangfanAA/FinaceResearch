@@ -16,7 +16,8 @@ dependencies = [
   "akshare>=1.14.0",
   "pandas>=2.0.0",
   "pandas_ta>=0.3.14b",
-  "tenacity>=8.2.0"
+  "tenacity>=8.2.0",
+  "mysql-connector-python>=8.0.0"
 ]
 
 [project.optional-dependencies]

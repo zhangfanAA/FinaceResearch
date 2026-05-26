@@ -251,3 +251,91 @@ class FundHoldingItem(BaseModel):
     total_pnl: float | None = None
     total_pnl_pct: float | None = None
     data_source: str = "unknown"
+
+
+# ---- Position Operation Models ----
+
+
+class PositionOperationRequest(BaseModel):
+    """Request body for executing a position operation."""
+    operation_type: Literal["buy", "sell", "add", "reduce"]
+    operation_amount: float | None = Field(default=None, ge=0)
+    operation_shares: float | None = Field(default=None, ge=0)
+    operation_nav: float | None = Field(default=None, gt=0)
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class PositionOperationResponse(BaseModel):
+    """Response for a single position operation."""
+    id: int
+    watchlist_id: int
+    operation_type: str
+    operation_amount: float | None = None
+    operation_shares: float | None = None
+    operation_nav: float | None = None
+    operation_date: str
+    note: str | None = None
+    created_at: str | None = None
+
+
+class PositionSummaryItem(BaseModel):
+    """A watchlist item enriched with operation metadata for summary view."""
+    id: int
+    item_type: str
+    code: str
+    name: str | None = None
+    added_at: str | None = None
+    sort_order: int = 0
+    purchase_amount: float | None = None
+    purchase_nav: float | None = None
+    purchase_date: str | None = None
+    shares: float | None = None
+    current_nav: float | None = None
+    current_nav_date: str | None = None
+    daily_return: float | None = None
+    total_pnl: float | None = None
+    total_pnl_pct: float | None = None
+    operation_count: int = 0
+    latest_operation: dict[str, Any] | None = None
+
+
+class PositionSummaryResponse(BaseModel):
+    """Portfolio-level position summary."""
+    total_items: int
+    total_purchase_amount: float
+    total_shares: float
+    total_pnl: float
+    total_pnl_pct: float
+    total_current_value: float
+    items: list[PositionSummaryItem]
+
+
+# ---- AI Wind Vane Models ----
+
+
+class HotSectorItem(BaseModel):
+    sector_name: str
+    change_pct: float
+    reason: str
+
+
+class FundRecommendationItem(BaseModel):
+    direction: str
+    reason: str
+    fund_codes: list[str]
+    fund_names: list[str]
+    risk_level: str
+
+
+class AIWindRequest(BaseModel):
+    force_refresh: bool = False
+
+
+class AIWindResponse(BaseModel):
+    hot_sectors: list[HotSectorItem]
+    fund_recommendations: list[FundRecommendationItem]
+    market_sentiment: str
+    sentiment_score: float
+    summary: str
+    generated_at: str
+    cached: bool

@@ -24,7 +24,7 @@ import SearchAutocomplete from '../components/SearchAutocomplete';
 import SentimentMeter from '../components/SentimentMeter';
 import SkeletonTable from '../components/SkeletonTable';
 import TechnicalChart from '../components/TechnicalChart';
-import WatchlistManager from '../components/WatchlistManager';
+import WatchlistPanel from '../components/WatchlistPanel';
 import useAutoRefresh from '../hooks/useAutoRefresh';
 import useDataFreshness from '../hooks/useDataFreshness';
 import useToast from '../hooks/useToast';
@@ -511,6 +511,7 @@ export default function StockSector() {
   const [analysisError, setAnalysisError] = useState('');
   const [stepIndex, setStepIndex] = useState(0);
   const [showHistory, setShowHistory] = useState(false);
+  const [showWatchlist, setShowWatchlist] = useState(false);
   const lastFetchedAtRef = useRef(null);
   const [lastFetchedAt, setLastFetchedAt] = useState(null);
 
@@ -680,16 +681,23 @@ export default function StockSector() {
       <div className="sector-type-selector">
         {SECTOR_TYPE_OPTIONS.map((opt) => (
           <button key={opt.value} type="button"
-            className={`tab-nav__button ${sectorType === opt.value && !showHistory ? 'tab-nav__button--active' : ''}`}
-            onClick={() => handleSectorTypeChange(opt.value)}>{opt.label}</button>
+            className={`tab-nav__button ${sectorType === opt.value && !showHistory && !showWatchlist ? 'tab-nav__button--active' : ''}`}
+            onClick={() => { setSectorType(opt.value); setShowHistory(false); setShowWatchlist(false); setSelectedSector(null); setAnalysis(null); setAnalysisError(''); }}>{opt.label}</button>
         ))}
+        <button type="button"
+          className={`tab-nav__button ${showWatchlist ? 'tab-nav__button--active' : ''}`}
+          onClick={() => { setShowWatchlist((p) => !p); setShowHistory(false); }}>
+          {t('stockSector.watchlist')}
+        </button>
         <button type="button" className={`tab-nav__button ${showHistory ? 'tab-nav__button--active' : ''}`}
-          onClick={() => setShowHistory((p) => !p)}>
+          onClick={() => { setShowHistory((p) => !p); setShowWatchlist(false); }}>
           {showHistory ? t('stockSector.backToList') : t('stockSector.viewHistory')}
         </button>
       </div>
 
-      {showHistory ? (
+      {showWatchlist ? (
+        <WatchlistPanel onAnalyze={handleWatchlistAnalyze} />
+      ) : showHistory ? (
         <AnalysisHistory initialType="stock_sector" />
       ) : (
         <>
@@ -736,10 +744,6 @@ export default function StockSector() {
                 ) : null}
               </div>
             </div>
-
-            <aside className="stock-sector-layout__sidebar">
-              <WatchlistManager onAnalyze={handleWatchlistAnalyze} />
-            </aside>
           </div>
         </>
       )}

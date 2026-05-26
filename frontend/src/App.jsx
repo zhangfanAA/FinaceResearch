@@ -34,6 +34,7 @@ import useKeyboardShortcut from './hooks/useKeyboardShortcut';
 const StockSector = lazy(() => import('./views/StockSector'));
 const FundSector = lazy(() => import('./views/FundSector'));
 const MarketOverview = lazy(() => import('./views/MarketOverview'));
+const WatchlistManagement = lazy(() => import('./views/WatchlistManagement'));
 
 /**
  * 格式化 JSON 值用于显示
@@ -576,6 +577,7 @@ export default function App() {
     { key: 'stock-sector', label: t('nav.stockSector') },
     { key: 'fund-sector', label: t('nav.fundSector') },
     { key: 'market-overview', label: t('nav.marketOverview') },
+    { key: 'watchlist-management', label: t('nav.watchlistManagement') },
   ], [t]);
 
   /**
@@ -740,6 +742,12 @@ export default function App() {
           <div className="layout-grid">
             <Suspense fallback={<SkeletonTable rows={3} columns={4} />}>
               <MarketOverview onNavigateTab={setActiveTab} />
+            </Suspense>
+          </div>
+        ) : activeTab === 'watchlist-management' ? (
+          <div className="layout-grid">
+            <Suspense fallback={<SkeletonTable rows={5} columns={7} />}>
+              <WatchlistManagement />
             </Suspense>
           </div>
         ) : null}

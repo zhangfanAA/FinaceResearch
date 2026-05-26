@@ -13,7 +13,8 @@
     "dashboard": "Dashboard",
     "stockSector": "Stock Sector",
     "fundSector": "Fund Analysis",
-    "marketOverview": "Market Overview"
+    "marketOverview": "Market Overview",
+    "watchlistManagement": "Watchlist"
   },
   "language": {
     "zh": "中",
@@ -104,6 +105,7 @@
     "concept": "Concept",
     "viewHistory": "View History",
     "backToList": "Back to Sectors",
+    "watchlist": "Watchlist",
     "table": {
       "sectorName": "Sector Name",
       "changePct": "Change %",
@@ -172,6 +174,7 @@
     "refreshHoldings": "Refresh Holdings",
     "viewHistory": "View History",
     "backToAnalysis": "Back to Analysis",
+    "watchlist": "Watchlist",
     "sidebar": {
       "holdings": "Holdings",
       "noHoldings": "No holdings data.",
@@ -374,6 +377,54 @@
       "analyzing": "Analyzing..."
     }
   },
+  "watchlistManagement": {
+    "title": "Watchlist Management",
+    "subtitle": "Manage watchlist funds/stocks with add/reduce position operations and AI analysis",
+    "summary": {
+      "totalInvested": "Total Invested",
+      "totalPnl": "Total P&L",
+      "totalPnlPct": "Return %",
+      "itemCount": "Positions"
+    },
+    "addSection": {
+      "title": "Add to Watchlist"
+    },
+    "table": {
+      "amount": "Amount",
+      "currentNav": "Current NAV",
+      "dailyReturn": "Daily Return",
+      "pnl": "P&L",
+      "pnlPct": "P&L %"
+    },
+    "operations": {
+      "addPosition": "Add",
+      "reducePosition": "Reduce",
+      "amount": "Amount (CNY)",
+      "shares": "Shares",
+      "nav": "NAV",
+      "note": "Note",
+      "notePlaceholder": "Enter operation note (optional)",
+      "submit": "Confirm",
+      "submitting": "Submitting...",
+      "addSuccess": "Position added successfully",
+      "reduceSuccess": "Position reduced successfully",
+      "operationFailed": "Operation failed"
+    },
+    "analysis": {
+      "title": "AI Analysis",
+      "empty": "Waiting for analysis",
+      "emptyHint": "Select a watchlist item from the left and click 'Analyze' to start AI analysis",
+      "emptyWithItem": "Current item: {{code}}, click 'Analyze' on the left to start",
+      "loadingMessage": "Calling AI model for deep analysis...",
+      "operationSuggestion": "Operation Suggestion",
+      "riskDisclaimer": "Risk Disclaimer: AI analysis is for reference only and does not constitute investment advice. Investing involves risks.",
+      "steps": {
+        "fetchData": "Fetching data",
+        "calculateIndicators": "Calculating indicators",
+        "aiAnalysis": "AI deep analysis"
+      }
+    }
+  },
   "components": {
     "autoRefresh": {
       "on": "Auto-refresh: ON",
@@ -493,6 +544,7 @@
     "close": "Close",
     "addSuccess": "Added to watchlist",
     "addFailed": "Failed to add",
+    "removeSuccess": "Removed from watchlist",
     "duplicate": "This item is already in the watchlist",
     "exportSuccess": "Export successful",
     "analysisFailed": "Analysis failed",
@@ -521,5 +573,28 @@
     "dark": "Dark Mode",
     "light": "Light Mode",
     "toggle": "Toggle theme"
+  },
+  "aiWind": {
+    "title": "AI Wind Indicator",
+    "lastUpdate": "Last Updated",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing...",
+    "hotSectors": "Hot Sectors",
+    "sectorName": "Sector Name",
+    "changePct": "Change %",
+    "reason": "Reason",
+    "fundRecommendations": "Fund Recommendations",
+    "direction": "Direction",
+    "rationale": "Rationale",
+    "fundCodes": "Fund Codes",
+    "riskLevel": "Risk Level",
+    "riskLow": "Low Risk",
+    "riskMedium": "Medium Risk",
+    "riskHigh": "High Risk",
+    "marketSentiment": "Market Sentiment",
+    "sentimentLabel": "Sentiment Indicator",
+    "noData": "No AI Wind data available",
+    "error": "Failed to load AI Wind data",
+    "autoRefresh": "Auto-refresh every 5 minutes"
   }
 }

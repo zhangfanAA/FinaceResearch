@@ -12,7 +12,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getLots, getFundNav, analyzeFundSector } from '../api/client';
+import { getFundHoldings, getFundNav, analyzeFundSector } from '../api/client';
+import AIWindIndicator from '../components/AIWindIndicator';
 import AnalysisHistory from '../components/AnalysisHistory';
 import AnalysisLoadingState from '../components/AnalysisLoadingState';
 import AutoRefreshControls from '../components/AutoRefreshControls';
@@ -23,8 +24,7 @@ import SearchAutocomplete from '../components/SearchAutocomplete';
 import SentimentMeter from '../components/SentimentMeter';
 import SkeletonTable from '../components/SkeletonTable';
 import Sparkline from '../components/Sparkline';
-import FundHoldingsTable from '../components/FundHoldingsTable';
-import WatchlistManager from '../components/WatchlistManager';
+import WatchlistPanel from '../components/WatchlistPanel';
 import useAutoRefresh from '../hooks/useAutoRefresh';
 import useDataFreshness from '../hooks/useDataFreshness';
 
@@ -73,26 +73,28 @@ function getChangeTone(value) {
  * @description 展示单只持仓基金的基本信息和 AI 分析触发按钮
  *
  * @param {Object} props
- * @param {Object} props.lot - 持仓记录对象
+ * @param {Object} props.holding - 基金持仓对象
  * @param {boolean} props.active - 是否为当前选中状态
  * @param {boolean} props.disabled - 是否禁用（分析进行中）
  * @param {Function} props.onAnalyze - 触发分析的回调
  * @param {Function} props.t - i18next 翻译函数
  * @returns {JSX.Element} 持仓卡片 JSX
  */
-function HoldingCard({ lot, active, disabled, onAnalyze, t }) {
+function HoldingCard({ holding, active, disabled, onAnalyze, t }) {
+  const pnlTone = getChangeTone(holding.total_pnl);
   return (
     <article className={`holding-card ${active ? 'holding-card--active' : ''}`}>
       <div className="holding-card__header">
-        <h3>{lot.asset_code}</h3>
-        <span className="badge badge--warn">{lot.holding_days} {t('fundSector.sidebar.holdingDays')}</span>
+        <h3>{holding.code}</h3>
+        <span className="badge badge--warn">{holding.name || '--'}</span>
       </div>
       <dl className="key-value-grid key-value-grid--dense">
-        <div><dt>{t('fundSector.sidebar.shares')}</dt><dd>{formatNumber(lot.shares, 4)}</dd></div>
-        <div><dt>{t('fundSector.sidebar.pnlRatio')}</dt><dd>{formatPercent(lot.pnl_ratio)}</dd></div>
-        <div><dt>{t('fundSector.sidebar.status')}</dt><dd>{lot.status || 'OPEN'}</dd></div>
+        <div><dt>{t('watchlist.fundHoldings.currentNav')}</dt><dd>{formatNumber(holding.current_nav, 4)}</dd></div>
+        <div><dt>{t('watchlist.fundHoldings.dailyReturn')}</dt><dd className={`sector-row__change sector-row__change--${getChangeTone(holding.daily_return)}`}>{formatPercent(holding.daily_return)}</dd></div>
+        <div><dt>{t('watchlist.fundHoldings.totalPnl')}</dt><dd className={`sector-row__change sector-row__change--${pnlTone}`}>{formatNumber(holding.total_pnl, 2)}</dd></div>
+        <div><dt>{t('watchlist.fundHoldings.totalPnlPct')}</dt><dd className={`sector-row__change sector-row__change--${pnlTone}`}>{formatPercent(holding.total_pnl_pct)}</dd></div>
       </dl>
-      <button type="button" className="button holding-card__action" disabled={disabled} onClick={() => onAnalyze(lot)}>
+      <button type="button" className="button holding-card__action" disabled={disabled} onClick={() => onAnalyze(holding)}>
         {disabled ? t('fundSector.sidebar.aiAnalyzing') : t('fundSector.sidebar.aiAnalysis')}
       </button>
     </article>
@@ -271,10 +273,10 @@ function FundAnalysisResult({ analysis, holdingDays, t }) {
  */
 export default function FundSector() {
   const { t } = useTranslation();
-  const [lots, setLots] = useState([]);
-  const [lotsLoading, setLotsLoading] = useState(true);
-  const [lotsError, setLotsError] = useState('');
-  const [selectedLot, setSelectedLot] = useState(null);
+  const [fundHoldings, setFundHoldings] = useState([]);
+  const [fundHoldingsLoading, setFundHoldingsLoading] = useState(true);
+  const [fundHoldingsError, setFundHoldingsError] = useState('');
+  const [selectedHolding, setSelectedHolding] = useState(null);
   const [fundCodeInput, setFundCodeInput] = useState('');
   const [customPrompt, setCustomPrompt] = useState('');
   const [promptExpanded, setPromptExpanded] = useState(false);
@@ -286,7 +288,8 @@ export default function FundSector() {
   const [analysisError, setAnalysisError] = useState('');
   const [stepIndex, setStepIndex] = useState(0);
   const [showHistory, setShowHistory] = useState(false);
-  const [lastLotsFetchedAt, setLastLotsFetchedAt] = useState(null);
+  const [showWatchlist, setShowWatchlist] = useState(false);
+  const [lastHoldingsFetchedAt, setLastHoldingsFetchedAt] = useState(null);
 
   const ANALYSIS_STEPS = [t('fundSector.steps.0'), t('fundSector.steps.1'), t('fundSector.steps.2')];
 
@@ -294,31 +297,31 @@ export default function FundSector() {
   const hasCode = fundCodeInput.trim().length > 0;
 
   const fundSuggestions = useMemo(() => {
-    return lots.map((lot) => ({ code: lot.asset_code, label: lot.asset_code, sub: `${lot.holding_days}${t('fundSector.sidebar.holdingDays')}` }));
-  }, [lots, t]);
+    return fundHoldings.map((h) => ({ code: h.code, label: h.code, sub: h.name || '' }));
+  }, [fundHoldings]);
 
-  /** Load simulated holdings */
-  const loadLots = useCallback(async () => {
-    setLotsLoading(true); setLotsError('');
+  /** Load fund holdings */
+  const loadFundHoldings = useCallback(async () => {
+    setFundHoldingsLoading(true); setFundHoldingsError('');
     try {
-      const response = await getLots();
-      setLots(Array.isArray(response) ? response : []);
-      setLastLotsFetchedAt(Date.now());
+      const response = await getFundHoldings();
+      setFundHoldings(Array.isArray(response) ? response : []);
+      setLastHoldingsFetchedAt(Date.now());
     } catch (err) {
-      setLots([]);
-      setLotsError(err.message || '持仓加载失败');
+      setFundHoldings([]);
+      setFundHoldingsError(err.message || '持仓加载失败');
     } finally {
-      setLotsLoading(false);
+      setFundHoldingsLoading(false);
     }
   }, []);
 
   const { autoRefreshEnabled, toggleAutoRefresh, secondsUntilRefresh, markRefreshed } = useAutoRefresh({
-    onRefresh: loadLots, intervalMs: 300000, enabled: true, paused: analyzing,
+    onRefresh: loadFundHoldings, intervalMs: 300000, enabled: true, paused: analyzing,
   });
 
-  const lotsFreshness = useDataFreshness(lastLotsFetchedAt, { fresh: 60, stale: 300 });
+  const holdingsFreshness = useDataFreshness(lastHoldingsFetchedAt, { fresh: 60, stale: 300 });
 
-  useEffect(() => { loadLots(); }, [loadLots]);
+  useEffect(() => { loadFundHoldings(); }, [loadFundHoldings]);
 
   useEffect(() => {
     let timer = null;
@@ -359,15 +362,15 @@ export default function FundSector() {
   }, [fundCodeInput]);
 
   /** Handle analysis from holding card click */
-  const handleAnalyzeLot = useCallback((lot) => {
-    setSelectedLot(lot); setFundCodeInput(lot.asset_code); runAnalysis(lot.asset_code);
+  const handleAnalyzeHolding = useCallback((holding) => {
+    setSelectedHolding(holding); setFundCodeInput(holding.code); runAnalysis(holding.code);
   }, [runAnalysis]);
 
   /** Handle analysis from input field */
   const handleAnalyzeInput = useCallback(() => {
     const code = fundCodeInput.trim();
     if (!code) return;
-    setSelectedLot(null);
+    setSelectedHolding(null);
     runAnalysis(code);
   }, [fundCodeInput, runAnalysis]);
 
@@ -375,14 +378,14 @@ export default function FundSector() {
   const handleWatchlistAnalyze = useCallback((type, code) => {
     if (type === 'fund') {
       setFundCodeInput(code);
-      setSelectedLot(null);
+      setSelectedHolding(null);
       runAnalysis(code);
     }
   }, [runAnalysis]);
 
   /** Display name for the currently selected fund */
-  const activeFundLabel = selectedLot
-    ? selectedLot.asset_code
+  const activeFundLabel = selectedHolding
+    ? selectedHolding.code
     : hasCode ? fundCodeInput.trim() : null;
 
   return (
@@ -394,36 +397,45 @@ export default function FundSector() {
           <p>{t('fundSector.subtitle')}</p>
         </div>
         <div className="section-header__actions">
-          <DataFreshnessBadge level={lotsFreshness.level} label={lotsFreshness.label} />
+          <DataFreshnessBadge level={holdingsFreshness.level} label={holdingsFreshness.label} />
           <AutoRefreshControls enabled={autoRefreshEnabled} onToggle={toggleAutoRefresh}
             secondsUntilRefresh={secondsUntilRefresh} paused={analyzing} />
           <button type="button" className="button button--secondary"
-            onClick={() => { loadLots(); markRefreshed(); }}>{t('fundSector.refreshHoldings')}</button>
+            onClick={() => { loadFundHoldings(); markRefreshed(); }}>{t('fundSector.refreshHoldings')}</button>
+          <button type="button" className={`button ${showWatchlist ? '' : 'button--secondary'}`}
+            onClick={() => { setShowWatchlist((p) => !p); setShowHistory(false); }}>
+            {t('fundSector.watchlist')}
+          </button>
           <button type="button" className={`button ${showHistory ? '' : 'button--secondary'}`}
-            onClick={() => setShowHistory((p) => !p)}>
+            onClick={() => { setShowHistory((p) => !p); setShowWatchlist(false); }}>
             {showHistory ? t('fundSector.backToAnalysis') : t('fundSector.viewHistory')}
           </button>
         </div>
       </div>
 
-      {showHistory ? (
+      {showWatchlist ? (
+        <WatchlistPanel onAnalyze={handleWatchlistAnalyze} />
+      ) : showHistory ? (
         <AnalysisHistory initialType="fund_sector" />
       ) : (
         /* THE KEY FIX: Use a wrapper div with explicit flex layout */
         <div className="fund-sector-layout">
           {/* LEFT: All data and controls */}
           <div className="fund-sector-layout__left">
+            {/* AI Wind Indicator */}
+            <AIWindIndicator />
+
             {/* Holdings */}
             <div className="subpanel">
               <div className="subpanel__header"><h3>{t('fundSector.sidebar.holdings')}</h3></div>
-              {lotsError ? <ErrorWithRetry message={lotsError} onRetry={loadLots} retrying={lotsLoading} /> : null}
-              {lotsLoading && lots.length === 0 ? <SkeletonTable rows={3} columns={3} /> : null}
-              {!lotsLoading && lots.length === 0 && !lotsError ? <p className="empty-state">{t('fundSector.sidebar.noHoldings')}</p> : null}
-              {!lotsLoading && lots.length > 0 ? (
+              {fundHoldingsError ? <ErrorWithRetry message={fundHoldingsError} onRetry={loadFundHoldings} retrying={fundHoldingsLoading} /> : null}
+              {fundHoldingsLoading && fundHoldings.length === 0 ? <SkeletonTable rows={3} columns={3} /> : null}
+              {!fundHoldingsLoading && fundHoldings.length === 0 && !fundHoldingsError ? <p className="empty-state">{t('fundSector.sidebar.noHoldings')}</p> : null}
+              {!fundHoldingsLoading && fundHoldings.length > 0 ? (
                 <div className="holding-card-list">
-                  {lots.map((lot) => (
-                    <HoldingCard key={lot.id} lot={lot} active={selectedLot?.id === lot.id}
-                      disabled={analyzing} onAnalyze={handleAnalyzeLot} t={t} />
+                  {fundHoldings.map((h) => (
+                    <HoldingCard key={h.id} holding={h} active={selectedHolding?.id === h.id}
+                      disabled={analyzing} onAnalyze={handleAnalyzeHolding} t={t} />
                   ))}
                 </div>
               ) : null}
@@ -433,7 +445,7 @@ export default function FundSector() {
             <div className="subpanel">
               <div className="subpanel__header"><h3>{t('fundSector.fundCode.title')}</h3></div>
               <SearchAutocomplete value={fundCodeInput} onChange={setFundCodeInput}
-                onSelect={(code) => { setFundCodeInput(code); setSelectedLot(null); runAnalysis(code); }}
+                onSelect={(code) => { setFundCodeInput(code); setSelectedHolding(null); runAnalysis(code); }}
                 onSearch={() => handleAnalyzeInput()}
                 placeholder={t('fundSector.fundCode.placeholder')} disabled={analyzing}
                 staticSuggestions={fundSuggestions} recentKey="fund_search_recent"
@@ -474,16 +486,6 @@ export default function FundSector() {
               </div>
             ) : null}
 
-            {/* Watchlist */}
-            <WatchlistManager onAnalyze={handleWatchlistAnalyze} />
-
-            {/* Fund holdings table */}
-            <div className="subpanel">
-              <div className="subpanel__header">
-                <h3>{t('watchlist.fundHoldings.title')}</h3>
-              </div>
-              <FundHoldingsTable />
-            </div>
           </div>
 
           {/* RIGHT: AI panel only - SIBLING of left, not nested inside anything */}
@@ -494,7 +496,7 @@ export default function FundSector() {
               <div className="inline-alert inline-alert--error">{analysisError}</div>
             ) : analysis ? (
               <>
-                <FundAnalysisResult analysis={analysis} holdingDays={selectedLot?.holding_days} t={t} />
+                <FundAnalysisResult analysis={analysis} holdingDays={selectedHolding?.holding_days} t={t} />
                 <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
                   <ExportButton data={analysis} filename={`fund-analysis-${analysis.fund_code || analysis.fund_name || 'result'}`} />
                 </div>

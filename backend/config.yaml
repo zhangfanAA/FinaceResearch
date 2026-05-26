@@ -41,6 +41,21 @@ ollama:
   timeout_seconds: 60
   api_key: ""
 
+deepseek:
+  base_url: http://model.mify.ai.srv/v1
+  generate_path: ""
+  model: deepseek-chat
+  timeout_seconds: 60
+  api_key: ""
+
+mysql:
+  host: localhost
+  port: 3306
+  user: root
+  password: "1234"
+  database: Finnacequant
+  pool_size: 5
+
 data_sources:
   proxy:
     http: ""

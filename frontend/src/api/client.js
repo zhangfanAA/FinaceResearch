@@ -486,6 +486,51 @@ export function updateWatchlistItem(itemId, updates) {
 }
 
 /* ==========================================================================
+   自选管理操作 API（Watchlist Management Operations）
+   ========================================================================== */
+
+/**
+ * 添加自选操作记录（加仓/减仓）
+ *
+ * @async
+ * @param {number|string} itemId - 自选项目 ID
+ * @param {Object} data - 操作数据
+ * @param {string} data.operation_type - 操作类型：'add'（加仓）或 'reduce'（减仓）
+ * @param {number} [data.amount] - 操作金额
+ * @param {number} [data.shares] - 操作份额
+ * @param {number} [data.nav] - 操作净值
+ * @param {string} [data.note] - 备注
+ * @returns {Promise<Object>} 操作结果
+ */
+export function addWatchlistOperation(itemId, data) {
+  return request(`/api/watchlist/${itemId}/operations`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * 获取自选项目的操作记录
+ *
+ * @async
+ * @param {number|string} itemId - 自选项目 ID
+ * @returns {Promise<Array>} 操作记录数组
+ */
+export function getWatchlistOperations(itemId) {
+  return request(`/api/watchlist/${itemId}/operations`);
+}
+
+/**
+ * 获取自选列表汇总统计
+ *
+ * @async
+ * @returns {Promise<Object>} 汇总统计数据
+ */
+export function getWatchlistSummary() {
+  return request('/api/watchlist/summary');
+}
+
+/* ==========================================================================
    基金持仓 API
    ========================================================================== */
 
@@ -497,6 +542,36 @@ export function updateWatchlistItem(itemId, updates) {
  */
 export function getFundHoldings() {
   return request('/api/fund-holdings');
+}
+
+/* ==========================================================================
+   AI 风向标 API
+   ========================================================================== */
+
+/**
+ * 获取 AI 风向标数据
+ *
+ * @async
+ * @param {boolean} [forceRefresh=false] - 是否强制刷新（忽略缓存）
+ * @returns {Promise<Object>} AI 风向标数据，包含 hot_sectors、fund_recommendations、market_sentiment 等
+ */
+export function getAIWind(forceRefresh = false) {
+  return request('/api/funds/ai-wind', {
+    method: 'POST',
+    body: JSON.stringify({ force_refresh: forceRefresh }),
+  });
+}
+
+/**
+ * 获取基金实时净值
+ *
+ * @async
+ * @param {string[]} codes - 基金代码数组
+ * @returns {Promise<Array>} 基金实时净值数据数组
+ */
+export function getFundNavRealtime(codes) {
+  const encoded = encodeURIComponent(codes.join(','));
+  return request(`/api/funds/nav-realtime?codes=${encoded}`);
 }
 
 /* ==========================================================================

@@ -13,7 +13,8 @@
     "dashboard": "概览面板",
     "stockSector": "股票板块",
     "fundSector": "基金研判",
-    "marketOverview": "市场总览"
+    "marketOverview": "市场总览",
+    "watchlistManagement": "自选管理"
   },
   "language": {
     "zh": "中",
@@ -104,6 +105,7 @@
     "concept": "概念板块",
     "viewHistory": "查看历史",
     "backToList": "返回板块",
+    "watchlist": "自选管理",
     "table": {
       "sectorName": "板块名称",
       "changePct": "涨跌幅",
@@ -172,6 +174,7 @@
     "refreshHoldings": "刷新持仓",
     "viewHistory": "查看历史",
     "backToAnalysis": "返回研判",
+    "watchlist": "自选管理",
     "sidebar": {
       "holdings": "持仓概览",
       "noHoldings": "当前没有持仓数据。",
@@ -374,6 +377,54 @@
       "analyzing": "分析中..."
     }
   },
+  "watchlistManagement": {
+    "title": "自选管理",
+    "subtitle": "管理自选基金/股票，支持加仓/减仓操作和 AI 分析",
+    "summary": {
+      "totalInvested": "总投入",
+      "totalPnl": "总盈亏",
+      "totalPnlPct": "收益率",
+      "itemCount": "持仓数量"
+    },
+    "addSection": {
+      "title": "添加自选"
+    },
+    "table": {
+      "amount": "持仓金额",
+      "currentNav": "当前净值",
+      "dailyReturn": "日涨跌",
+      "pnl": "盈亏",
+      "pnlPct": "盈亏比例"
+    },
+    "operations": {
+      "addPosition": "加仓",
+      "reducePosition": "减仓",
+      "amount": "金额（元）",
+      "shares": "份额",
+      "nav": "净值",
+      "note": "备注",
+      "notePlaceholder": "输入操作备注（可选）",
+      "submit": "确认操作",
+      "submitting": "提交中...",
+      "addSuccess": "加仓操作成功",
+      "reduceSuccess": "减仓操作成功",
+      "operationFailed": "操作失败"
+    },
+    "analysis": {
+      "title": "AI 分析",
+      "empty": "等待分析",
+      "emptyHint": "从左侧选择自选项目，点击「分析」按钮开始 AI 分析",
+      "emptyWithItem": "当前项目：{{code}}，点击左侧「分析」按钮开始 AI 分析",
+      "loadingMessage": "正在调用 AI 模型进行深度分析...",
+      "operationSuggestion": "操作建议",
+      "riskDisclaimer": "风险提示：AI 分析仅供参考，不构成投资建议。投资有风险，入市需谨慎。",
+      "steps": {
+        "fetchData": "获取数据",
+        "calculateIndicators": "计算技术指标",
+        "aiAnalysis": "AI 深度分析"
+      }
+    }
+  },
   "components": {
     "autoRefresh": {
       "on": "自动刷新: 开",
@@ -493,6 +544,7 @@
     "close": "关闭",
     "addSuccess": "已添加到自选",
     "addFailed": "添加失败",
+    "removeSuccess": "已从自选移除",
     "duplicate": "该项目已在自选列表中",
     "exportSuccess": "导出成功",
     "analysisFailed": "分析失败",
@@ -521,5 +573,28 @@
     "dark": "深色模式",
     "light": "浅色模式",
     "toggle": "切换主题"
+  },
+  "aiWind": {
+    "title": "AI 风向标",
+    "lastUpdate": "最后更新",
+    "refresh": "刷新",
+    "refreshing": "刷新中...",
+    "hotSectors": "热门板块",
+    "sectorName": "板块名称",
+    "changePct": "涨跌幅",
+    "reason": "原因",
+    "fundRecommendations": "基金推荐",
+    "direction": "方向",
+    "rationale": "理由",
+    "fundCodes": "基金代码",
+    "riskLevel": "风险等级",
+    "riskLow": "低风险",
+    "riskMedium": "中风险",
+    "riskHigh": "高风险",
+    "marketSentiment": "市场情绪",
+    "sentimentLabel": "情绪指标",
+    "noData": "暂无 AI 风向标数据",
+    "error": "AI 风向标加载失败",
+    "autoRefresh": "每 5 分钟自动刷新"
   }
 }
