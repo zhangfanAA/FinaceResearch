@@ -8,9 +8,11 @@
  * 支持 5 分钟自动刷新和手动强制刷新
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getAIWind } from '../api/client';
+import useStaleData from '../hooks/useStaleData';
+import DataSourceBadge from './DataSourceBadge';
 import ErrorWithRetry from './ErrorWithRetry';
 import SentimentMeter from './SentimentMeter';
 import SkeletonTable from './SkeletonTable';
@@ -98,55 +100,30 @@ function AIWindSkeleton() {
  */
 export default function AIWindIndicator() {
   const { t } = useTranslation();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [lastUpdated, setLastUpdated] = useState(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const intervalRef = useRef(null);
+  const forceRefreshRef = useRef(false);
 
-  /**
-   * 加载 AI 风向标数据
-   * @param {boolean} forceRefresh - 是否强制刷新
-   */
-  const loadData = useCallback(async (forceRefresh = false) => {
-    if (forceRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-    setError('');
-    try {
-      const result = await getAIWind(forceRefresh);
-      setData(result);
-      setLastUpdated(Date.now());
-    } catch (err) {
-      setError(err.message || t('aiWind.error'));
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [t]);
-
-  /* 初始加载 */
-  useEffect(() => {
-    loadData(false);
-  }, [loadData]);
-
-  /* 1 分钟自动刷新 */
-  useEffect(() => {
-    intervalRef.current = window.setInterval(() => {
-      loadData(false);
-    }, 60000);
-    return () => {
-      if (intervalRef.current) window.clearInterval(intervalRef.current);
-    };
-  }, [loadData]);
+  // 使用 useStaleData 管理 AI 风向标数据，支持分时刷新
+  const {
+    data,
+    loading,
+    refreshing,
+    error,
+    lastSuccessfulFetch: lastUpdated,
+    refresh: doRefresh,
+  } = useStaleData(
+    useCallback(async () => {
+      const force = forceRefreshRef.current;
+      forceRefreshRef.current = false; // Reset after use
+      return await getAIWind(force);
+    }, []),
+    { intervalMs: 60000, enabled: true, staggerMs: 15000 }
+  );
 
   /** 手动强制刷新 */
   const handleForceRefresh = useCallback(() => {
-    loadData(true);
-  }, [loadData]);
+    forceRefreshRef.current = true;
+    doRefresh();
+  }, [doRefresh]);
 
   /** 格式化最后更新时间 */
   const formattedTime = lastUpdated
@@ -197,7 +174,10 @@ export default function AIWindIndicator() {
     <section className="subpanel ai-wind-indicator">
       {/* Header with refresh controls */}
       <div className="subpanel__header">
-        <h3>{t('aiWind.title')}</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h3>{t('aiWind.title')}</h3>
+          <DataSourceBadge />
+        </div>
         <div className="ai-wind-indicator__controls">
           <span className="ai-wind-indicator__time">
             {t('aiWind.lastUpdate')}: {formattedTime}
@@ -212,6 +192,9 @@ export default function AIWindIndicator() {
           </button>
         </div>
       </div>
+
+      {/* Error banner when stale data exists */}
+      {error && data && <div className="inline-alert inline-alert--warning">{error}</div>}
 
       {/* Hot Sectors */}
       {hotSectors.length > 0 && (

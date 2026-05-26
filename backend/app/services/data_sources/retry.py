@@ -20,6 +20,7 @@ import random
 from typing import Any
 
 import requests
+from http.client import RemoteDisconnected
 from tenacity import (
     RetryCallState,
     retry,
@@ -43,6 +44,7 @@ _RETRYABLE_EXCEPTIONS = (
     requests.exceptions.ConnectionError,
     requests.exceptions.Timeout,
     requests.exceptions.ProxyError,
+    RemoteDisconnected,
 )
 
 # HTTP status codes that trigger a retry

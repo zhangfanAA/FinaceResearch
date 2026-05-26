@@ -1,7 +1,7 @@
 /**
  * @fileoverview 自动刷新 Hook - 提供定时数据刷新和倒计时功能
  * @module hooks/useAutoRefresh
- * @description 可复用的自动刷新 Hook，支持启用/禁用、外部暂停信号和倒计时显示
+ * @description 可复用的自动刷新 Hook，支持启用/禁用、外部暂停信号、倒计时显示和分时刷新
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -15,28 +15,22 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * - 支持外部暂停信号（如 AI 分析进行中时暂停刷新）
  * - 提供倒计时秒数，便于 UI 显示
  * - 使用 ref 保持回调引用最新，避免不必要的重渲染
+ * - 支持分时刷新（staggerMs）避免多个面板同时请求
  *
  * @param {Object} options - 配置选项
  * @param {Function} options.onRefresh - 每次刷新时执行的异步回调函数
  * @param {number} options.intervalMs - 刷新间隔（毫秒）
  * @param {boolean} [options.enabled=true] - 是否默认启用自动刷新
  * @param {boolean} [options.paused=false] - 外部暂停信号（如 AI 分析进行中）
+ * @param {number} [options.staggerMs=0] - 分时延迟（毫秒），用于错开多个面板的刷新时间
  * @returns {Object} 自动刷新控制对象
  * @property {boolean} autoRefreshEnabled - 当前自动刷新是否启用
  * @property {Function} toggleAutoRefresh - 切换自动刷新启用/禁用状态
  * @property {number} secondsUntilRefresh - 距离下次刷新的倒计时秒数
  * @property {number|null} lastRefreshAt - 上次刷新的时间戳（毫秒），未刷新时为 null
  * @property {Function} markRefreshed - 手动标记已刷新（重置倒计时）
- *
- * @example
- * const { autoRefreshEnabled, toggleAutoRefresh, secondsUntilRefresh } = useAutoRefresh({
- *   onRefresh: loadData,
- *   intervalMs: 60000,
- *   enabled: true,
- *   paused: isAnalyzing,
- * });
  */
-export default function useAutoRefresh({ onRefresh, intervalMs, enabled = true, paused = false }) {
+export default function useAutoRefresh({ onRefresh, intervalMs, enabled = true, paused = false, staggerMs = 0 }) {
   /** @type {[boolean, Function]} 自动刷新启用状态 */
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(enabled);
   /** @type {[number, Function]} 距离下次刷新的倒计时秒数 */
@@ -48,6 +42,8 @@ export default function useAutoRefresh({ onRefresh, intervalMs, enabled = true, 
   const intervalRef = useRef(null);
   /** @type {React.RefObject<number|null>} 倒计时定时器引用 */
   const countdownRef = useRef(null);
+  /** @type {React.RefObject<number|null>} 分时延迟定时器引用 */
+  const staggerRef = useRef(null);
   /** @type {React.RefObject<Function>} 刷新回调引用（保持最新） */
   const onRefreshRef = useRef(onRefresh);
 
@@ -84,24 +80,45 @@ export default function useAutoRefresh({ onRefresh, intervalMs, enabled = true, 
       clearInterval(countdownRef.current);
       countdownRef.current = null;
     }
+    if (staggerRef.current) {
+      clearTimeout(staggerRef.current);
+      staggerRef.current = null;
+    }
 
     // 如果禁用或暂停，不启动定时器
     if (!autoRefreshEnabled || paused) {
       return () => {
         if (intervalRef.current) clearInterval(intervalRef.current);
         if (countdownRef.current) clearInterval(countdownRef.current);
+        if (staggerRef.current) clearTimeout(staggerRef.current);
       };
     }
 
     // 重置倒计时
     setSecondsUntilRefresh(Math.floor(intervalMs / 1000));
 
-    // 主刷新定时器：每隔 intervalMs 执行一次刷新
-    intervalRef.current = setInterval(() => {
-      onRefreshRef.current?.();
-      setLastRefreshAt(Date.now());
-      setSecondsUntilRefresh(Math.floor(intervalMs / 1000));
-    }, intervalMs);
+    // 分时刷新：使用 setTimeout 延迟第一次刷新，然后切换到 setInterval
+    const startInterval = () => {
+      // 主刷新定时器：每隔 intervalMs 执行一次刷新
+      intervalRef.current = setInterval(() => {
+        onRefreshRef.current?.();
+        setLastRefreshAt(Date.now());
+        setSecondsUntilRefresh(Math.floor(intervalMs / 1000));
+      }, intervalMs);
+    };
+
+    if (staggerMs > 0) {
+      // 分时模式：延迟第一次刷新
+      staggerRef.current = setTimeout(() => {
+        onRefreshRef.current?.();
+        setLastRefreshAt(Date.now());
+        setSecondsUntilRefresh(Math.floor(intervalMs / 1000));
+        startInterval();
+      }, staggerMs);
+    } else {
+      // 无分时：立即开始
+      startInterval();
+    }
 
     // 倒计时定时器：每秒递减倒计时
     countdownRef.current = setInterval(() => {
@@ -112,8 +129,9 @@ export default function useAutoRefresh({ onRefresh, intervalMs, enabled = true, 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (countdownRef.current) clearInterval(countdownRef.current);
+      if (staggerRef.current) clearTimeout(staggerRef.current);
     };
-  }, [autoRefreshEnabled, paused, intervalMs]);
+  }, [autoRefreshEnabled, paused, intervalMs, staggerMs]);
 
   return {
     autoRefreshEnabled,

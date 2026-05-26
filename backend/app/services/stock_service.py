@@ -23,18 +23,15 @@ import pandas as pd
 from app.services.data_sources.akshare_adapter import AkShareAdapter
 from app.services.data_sources.eastmoney_adapter import EastMoneyAdapter
 from app.services.data_sources.fallback_chain import FallbackChain
-from app.services.data_sources.mock_adapter import MockAdapter
 
 logger = logging.getLogger(__name__)
 
 CACHE_TTL_SECONDS = 60
 
 # Canonical fallback chain used by all fetch_* functions in this module.
-# Order: AkShare (priority=1) -> EastMoney (priority=2) -> Mock (priority=99)
-fallback_chain = FallbackChain([AkShareAdapter(), EastMoneyAdapter(), MockAdapter()])
-
-# Re-export mock data so existing tests that import from stock_service still work
-from app.services.data_sources.mock_adapter import MOCK_STOCK_DATA, MOCK_SECTOR_DATA  # noqa: E402
+# Order: AkShare (priority=1) -> EastMoney (priority=2)
+# Mock removed -- failures surface as errors instead of fake data
+fallback_chain = FallbackChain([AkShareAdapter(), EastMoneyAdapter()])
 
 
 @dataclass(slots=True)
@@ -318,6 +315,180 @@ def fetch_stock_history(
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
     return df
+
+
+def _get_historical_service():
+    """Lazy-initialize the historical data service singleton."""
+    global _historical_data_service
+    if _historical_data_service is None:
+        from app.services.historical_data_service import create_historical_data_service
+        from app.config import load_config
+        try:
+            config = load_config()
+            # Try to get the DeepSeek search service singleton from main
+            ds_service = None
+            try:
+                from app.main import get_deepseek_search_service
+                ds_service = get_deepseek_search_service()
+            except Exception:
+                pass
+            _historical_data_service = create_historical_data_service(
+                config, deepseek_search_service=ds_service,
+            )
+        except Exception as exc:
+            logger.warning("Failed to initialize historical data service: %s", exc)
+    return _historical_data_service
+
+
+_historical_data_service = None
+
+
+def fetch_sector_history(
+    sector_name: str,
+    sector_type: str = "industry",
+    days: int = 60,
+) -> list[dict[str, Any]]:
+    """Fetch historical kline data for a sector (板块历史行情).
+
+    Uses the multi-data-source historical data service with fallback chain
+    (Tushare -> Baostock -> efinance -> AkShare) and SQLite caching.
+    Falls back to direct AkShare call if the service is unavailable.
+
+    Args:
+        sector_name: e.g. "白酒", "半导体"
+        sector_type: "industry" or "concept"
+        days: number of calendar days of history
+    Returns:
+        List of dicts with keys: date, open, close, high, low, volume, change_pct
+    Raises:
+        ValueError if data unavailable
+    """
+    sector_name = sector_name.strip()
+    if not sector_name:
+        raise ValueError("sector_name must not be empty")
+
+    service = _get_historical_service()
+    if service is not None:
+        return service.get_sector_history(sector_name, sector_type, days)
+
+    # Fallback: direct AkShare call (legacy path)
+    logger.warning("Historical data service unavailable, falling back to direct AkShare call")
+    from datetime import timedelta
+
+    end_date = datetime.now().strftime("%Y%m%d")
+    start_date = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
+
+    try:
+        if sector_type == "concept":
+            df = ak.stock_board_concept_hist_em(
+                symbol=sector_name, period="日k",
+                start_date=start_date, end_date=end_date, adjust="",
+            )
+        else:
+            df = ak.stock_board_industry_hist_em(
+                symbol=sector_name, period="日k",
+                start_date=start_date, end_date=end_date, adjust="",
+            )
+    except Exception as exc:
+        raise ValueError(f"Failed to fetch sector history for {sector_name}: {exc}") from exc
+
+    if df is None or df.empty:
+        raise ValueError(f"No history data returned for sector {sector_name}")
+
+    rename_map = {
+        "日期": "date",
+        "开盘": "open",
+        "收盘": "close",
+        "最高": "high",
+        "最低": "low",
+        "成交量": "volume",
+        "涨跌幅": "change_pct",
+    }
+    df = df.rename(columns=rename_map)
+
+    results: list[dict[str, Any]] = []
+    for _, row in df.iterrows():
+        results.append({
+            "date": _safe_str(row.get("date")),
+            "open": _safe_float(row.get("open")),
+            "close": _safe_float(row.get("close")),
+            "high": _safe_float(row.get("high")),
+            "low": _safe_float(row.get("low")),
+            "volume": _safe_float(row.get("volume")),
+            "change_pct": _safe_float(row.get("change_pct")),
+        })
+
+    return results
+
+
+def fetch_index_history(
+    index_code: str,
+    days: int = 60,
+) -> list[dict[str, Any]]:
+    """Fetch historical kline data for a stock index (指数历史行情).
+
+    Uses the multi-data-source historical data service with fallback chain
+    (Tushare -> Baostock -> efinance -> AkShare) and SQLite caching.
+    Falls back to direct AkShare call if the service is unavailable.
+
+    Args:
+        index_code: e.g. "000001" (上证指数), "399001" (深证成指)
+        days: number of calendar days of history
+    Returns:
+        List of dicts with keys: date, open, close, high, low, volume, change_pct
+    Raises:
+        ValueError if data unavailable
+    """
+    index_code = index_code.strip()
+    if not index_code:
+        raise ValueError("index_code must not be empty")
+
+    service = _get_historical_service()
+    if service is not None:
+        return service.get_index_history(index_code, days)
+
+    # Fallback: direct AkShare call (legacy path)
+    logger.warning("Historical data service unavailable, falling back to direct AkShare call")
+    from datetime import timedelta
+
+    end_date = datetime.now().strftime("%Y%m%d")
+    start_date = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
+
+    try:
+        df = ak.index_zh_a_hist(
+            symbol=index_code, period="daily",
+            start_date=start_date, end_date=end_date,
+        )
+    except Exception as exc:
+        raise ValueError(f"Failed to fetch index history for {index_code}: {exc}") from exc
+
+    if df is None or df.empty:
+        raise ValueError(f"No history data returned for index {index_code}")
+
+    rename_map = {
+        "日期": "date",
+        "开盘": "open",
+        "收盘": "close",
+        "最高": "high",
+        "最低": "low",
+        "成交量": "volume",
+        "涨跌幅": "change_pct",
+    }
+    df = df.rename(columns=rename_map)
+
+    results: list[dict[str, Any]] = []
+    for _, row in df.iterrows():
+        results.append({
+            "date": _safe_str(row.get("date")),
+            "open": _safe_float(row.get("open")),
+            "close": _safe_float(row.get("close")),
+            "high": _safe_float(row.get("high")),
+            "low": _safe_float(row.get("low")),
+            "volume": _safe_float(row.get("volume")),
+            "change_pct": _safe_float(row.get("change_pct")),
+        })
+
+    return results
 
 
 def compute_technical_indicators(df: pd.DataFrame) -> dict[str, Any]:

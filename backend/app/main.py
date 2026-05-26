@@ -76,6 +76,7 @@ _proxy_logger.info("Patched urllib.request.getproxies to ignore Windows registry
 
 import dataclasses
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -93,15 +94,20 @@ from app.models import (
     FundAnalysisRequest,
     FundAnalysisResponse,
     FundHoldingItem,
+    FundNavHistoryPoint,
+    FundNavHistoryResponse,
     FundNavResponse,
     GraphState,
+    HistoryPoint,
     ImageParseRequest,
     ImageParseResponse,
+    IndexHistoryResponse,
     MarketOverviewResponse,
     ParsedItem,
     PositionOperationRequest,
     PositionOperationResponse,
     PositionSummaryResponse,
+    SectorHistoryResponse,
     SectorQuoteResponse,
     StockAnalysisRequest,
     StockAnalysisResponse,
@@ -126,6 +132,8 @@ from app.services.watchlist_service import (
     update_watchlist_item,
 )
 from app.services.cloud_llm import CloudLLMError, CloudLLMNoAPIKeyError, test_cloud_llm_connection
+from app.services.deepseek_search_service import DeepSeekSearchService
+from app.services.deepseek_date_guard import date_guard
 from app.services.llm_settings import (
     LLMSettingsUpdate,
     get_effective_llm_config,
@@ -139,6 +147,34 @@ logger = logging.getLogger(__name__)
 
 CONFIG_PATH = DEFAULT_CONFIG_PATH
 LAST_STATE: dict[str, Any] | None = None
+
+# DeepSeek search service singleton (initialized at startup)
+_deepseek_search_service: DeepSeekSearchService | None = None
+
+
+def get_deepseek_search_service() -> DeepSeekSearchService | None:
+    """Return the global DeepSeekSearchService singleton, or None if not initialized."""
+    return _deepseek_search_service
+
+
+# ---------------------------------------------------------------------------
+# Data Persistence Service (lazy singleton for MySQL stale-data fallback)
+# ---------------------------------------------------------------------------
+
+_persistence_service = None
+
+
+def _get_persistence():
+    """Lazy-initialize the DataPersistenceService singleton."""
+    global _persistence_service
+    if _persistence_service is None:
+        try:
+            from app.services.data_persistence_service import DataPersistenceService
+            config = load_config(CONFIG_PATH)
+            _persistence_service = DataPersistenceService(config.mysql)
+        except Exception as exc:
+            logger.warning("Failed to initialize DataPersistenceService: %s", exc)
+    return _persistence_service
 
 ALLOWED_CORS_ORIGINS = [
     "http://localhost:5173",
@@ -229,14 +265,6 @@ class ResearchAnalyzeResponse(BaseModel):
     output: str
 
 
-MOCK_MARKET_PRICES = {
-    "008282": 1.10,
-    "sh563300": 1.05,
-    "000510": 1.08,
-    "SEMICONDUCTOR_C": 1.12,
-}
-
-
 app = FastAPI(title="micro-quant-pipeline", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -245,6 +273,62 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def _startup_init_mysql_tables():
+    """Initialize MySQL tables (including data_source_cache and DeepSeek tables) at app startup."""
+    global _deepseek_search_service
+
+    try:
+        from app.services.mysql_database import init_tables
+        config = load_config(CONFIG_PATH)
+        init_tables(
+            host=config.mysql.host,
+            port=config.mysql.port,
+            user=config.mysql.user,
+            password=config.mysql.password,
+            database=config.mysql.database,
+            pool_size=config.mysql.pool_size,
+        )
+        logger.info("MySQL tables initialized at startup")
+    except Exception as exc:
+        logger.warning("Failed to initialize MySQL tables at startup: %s", exc)
+
+    # Initialize DeepSeek search service singleton
+    try:
+        config = load_config(CONFIG_PATH)
+        ds_config = config.deepseek_search
+        if ds_config.enabled:
+            # Resolve API key: use deepseek_search.api_key, fall back to
+            # deepseek.api_key, then main LLM key, then DEEPSEEK_API_KEY env var
+            api_key = ds_config.api_key
+            if not api_key:
+                api_key = config.deepseek.api_key
+            if not api_key:
+                try:
+                    main_llm = get_effective_llm_config(config)
+                    api_key = main_llm.api_key or ""
+                except Exception:
+                    pass
+            if not api_key:
+                api_key = _os.environ.get("DEEPSEEK_API_KEY", "")
+            if api_key:
+                _deepseek_search_service = DeepSeekSearchService(
+                    base_url=ds_config.base_url,
+                    api_key=api_key,
+                    model=ds_config.model,
+                    timeout=ds_config.timeout_seconds,
+                    requests_per_minute=ds_config.requests_per_minute,
+                    daily_limit=ds_config.daily_limit,
+                )
+                logger.info("DeepSeek search service initialized (model=%s)", ds_config.model)
+            else:
+                logger.warning("DeepSeek search service skipped: no API key configured")
+        else:
+            logger.info("DeepSeek search service disabled in config")
+    except Exception as exc:
+        logger.warning("Failed to initialize DeepSeek search service: %s", exc)
 
 
 def get_config() -> Config:
@@ -284,9 +368,6 @@ def _holding_days(buy_date: str, as_of: datetime | None = None) -> int:
         checked_at = checked_at.replace(tzinfo=timezone.utc)
     return max((checked_at - bought_at).days, 0)
 
-
-def _mock_current_price(asset_code: str) -> float | None:
-    return MOCK_MARKET_PRICES.get(asset_code)
 
 
 def _pnl_ratio(cost_price: float, current_price: float | None) -> float:
@@ -339,7 +420,7 @@ async def list_lots(config: Config = Depends(get_config)) -> list[LotResponse]:
             holding_days=_holding_days(str(lot["buy_date"])),
             pnl_ratio=_pnl_ratio(
                 cost_price=float(lot["cost_price"]),
-                current_price=_mock_current_price(str(lot["asset_code"])),
+                current_price=None,  # No mock data -- real price requires live market feed
             ),
         )
         for lot in open_lots
@@ -436,6 +517,54 @@ async def post_llm_settings_test(config: Config = Depends(get_config)) -> LLMSet
     response_model=ResearchAnalyzeResponse,
     summary="Run read-only fund research analysis",
 )
+
+
+# ---------------------------------------------------------------------------
+# Mock Toggle API
+# ---------------------------------------------------------------------------
+
+
+class MockSettingsResponse(BaseModel):
+    enable_mock: bool
+
+
+class MockSettingsUpdate(BaseModel):
+    enable_mock: bool
+
+
+@app.get(
+    "/api/settings/mock",
+    response_model=MockSettingsResponse,
+    summary="Get mock data toggle state",
+)
+async def get_mock_settings(config: Config = Depends(get_config)) -> MockSettingsResponse:
+    """Return whether mock data fallback is enabled."""
+    return MockSettingsResponse(enable_mock=config.market.enable_mock)
+
+
+@app.put(
+    "/api/settings/mock",
+    response_model=MockSettingsResponse,
+    summary="Update mock data toggle",
+)
+async def put_mock_settings(
+    update: MockSettingsUpdate,
+) -> MockSettingsResponse:
+    """Toggle mock data on/off by updating config.yaml."""
+    import yaml
+
+    config_path = Path(CONFIG_PATH)
+    with config_path.open("r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+
+    market = raw.setdefault("market", {})
+    market["enable_mock"] = update.enable_mock
+    market["allow_mock_vix"] = update.enable_mock
+
+    with config_path.open("w", encoding="utf-8") as f:
+        yaml.dump(raw, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    return MockSettingsResponse(enable_mock=update.enable_mock)
 async def post_research_analyze(
     request: ResearchAnalyzeRequest,
     config: Config = Depends(get_config),
@@ -493,15 +622,42 @@ async def get_stock_realtime(
     codes: str = Query(..., min_length=1, description="Comma-separated stock codes, e.g. 600519,000001"),
     config: Config = Depends(get_config),
 ) -> list[StockQuoteResponse]:
-    """Fetch real-time quotes for specified A-share stocks via AkShare."""
+    """Fetch real-time quotes for specified A-share stocks via AkShare.
+
+    On success, stores the result in MySQL for stale-data fallback.
+    When all sources fail, returns the most recent cached record with stale=True.
+    """
+    from app.services.data_persistence_service import stock_realtime_key
+
     code_list = [c.strip() for c in codes.split(",") if c.strip()]
     if not code_list:
         raise HTTPException(status_code=400, detail="No valid stock codes provided")
+
+    ps = _get_persistence()
+    qk = stock_realtime_key(code_list)
+
     try:
         quotes = await run_in_threadpool(stock_service.fetch_stock_realtime_batch, code_list)
+        result = [StockQuoteResponse(**dataclasses.asdict(q)) for q in quotes]
+
+        if ps and result:
+            try:
+                ps.store("stock-realtime", "live", qk, [dataclasses.asdict(q) for q in quotes])
+            except Exception as store_exc:
+                logger.debug("Failed to persist stock-realtime: %s", store_exc)
+
+        return result
     except Exception as exc:
+        logger.warning("Live stock-realtime failed: %s", exc)
+
+        if ps:
+            fallback = ps.retrieve("stock-realtime", qk)
+            if fallback:
+                cached_data, cached_source, cached_at, _ = fallback
+                logger.info("Returning stale stock-realtime from %s", cached_source)
+                return [StockQuoteResponse(**{**d, "stale": True}) for d in cached_data]
+
         raise HTTPException(status_code=502, detail=f"Stock data fetch failed: {exc}") from exc
-    return [StockQuoteResponse(**dataclasses.asdict(q)) for q in quotes]
 
 
 @app.get(
@@ -514,12 +670,38 @@ async def get_stock_sectors(
     limit: int = Query(default=20, ge=1, le=100),
     config: Config = Depends(get_config),
 ) -> list[SectorQuoteResponse]:
-    """Fetch sector board rankings sorted by change_pct descending."""
+    """Fetch sector board rankings sorted by change_pct descending.
+
+    On success, stores the result in MySQL for stale-data fallback.
+    When all sources fail, returns the most recent cached record with stale=True.
+    """
+    from app.services.data_persistence_service import sector_list_key
+
+    ps = _get_persistence()
+    qk = sector_list_key(type, limit)
+
     try:
         sectors = await run_in_threadpool(stock_service.fetch_sector_list, type)
+        result = [SectorQuoteResponse(**dataclasses.asdict(s)) for s in sectors[:limit]]
+
+        if ps and result:
+            try:
+                ps.store("sectors", "live", qk, [dataclasses.asdict(s) for s in sectors[:limit]])
+            except Exception as store_exc:
+                logger.debug("Failed to persist sectors: %s", store_exc)
+
+        return result
     except Exception as exc:
+        logger.warning("Live sectors fetch failed: %s", exc)
+
+        if ps:
+            fallback = ps.retrieve("sectors", qk)
+            if fallback:
+                cached_data, cached_source, cached_at, _ = fallback
+                logger.info("Returning stale sectors from %s", cached_source)
+                return [SectorQuoteResponse(**{**d, "stale": True}) for d in cached_data]
+
         raise HTTPException(status_code=502, detail=f"Sector data fetch failed: {exc}") from exc
-    return [SectorQuoteResponse(**dataclasses.asdict(s)) for s in sectors[:limit]]
 
 
 @app.post(
@@ -568,15 +750,42 @@ async def get_fund_nav(
     codes: str = Query(..., min_length=1, description="Comma-separated fund codes, e.g. 000510,008282"),
     config: Config = Depends(get_config),
 ) -> list[FundNavResponse]:
-    """Fetch real-time NAV for specified funds via AkShare."""
+    """Fetch real-time NAV for specified funds via AkShare.
+
+    On success, stores the result in MySQL for stale-data fallback.
+    When all sources fail, returns the most recent cached record with stale=True.
+    """
+    from app.services.data_persistence_service import fund_nav_key
+
     code_list = [c.strip() for c in codes.split(",") if c.strip()]
     if not code_list:
         raise HTTPException(status_code=400, detail="No valid fund codes provided")
+
+    ps = _get_persistence()
+    qk = fund_nav_key(code_list)
+
     try:
         navs = await run_in_threadpool(fund_service.fetch_fund_nav_batch, code_list)
+        result = [FundNavResponse(**dataclasses.asdict(n)) for n in navs]
+
+        if ps and result:
+            try:
+                ps.store("fund-nav", "live", qk, [dataclasses.asdict(n) for n in navs])
+            except Exception as store_exc:
+                logger.debug("Failed to persist fund-nav: %s", store_exc)
+
+        return result
     except Exception as exc:
+        logger.warning("Live fund-nav failed: %s", exc)
+
+        if ps:
+            fallback = ps.retrieve("fund-nav", qk)
+            if fallback:
+                cached_data, cached_source, cached_at, _ = fallback
+                logger.info("Returning stale fund-nav from %s", cached_source)
+                return [FundNavResponse(**{**d, "stale": True}) for d in cached_data]
+
         raise HTTPException(status_code=502, detail=f"Fund NAV fetch failed: {exc}") from exc
-    return [FundNavResponse(**dataclasses.asdict(n)) for n in navs]
 
 
 @app.post(
@@ -672,41 +881,95 @@ async def post_ai_wind(
 async def get_market_overview(
     config: Config = Depends(get_config),
 ) -> MarketOverviewResponse:
-    """Aggregate market overview: VIX + major A-share indices + top/bottom sectors."""
+    """Aggregate market overview: VIX + major A-share indices + top/bottom sectors.
+
+    On success, stores the result in MySQL for stale-data fallback.
+    When all sources fail, returns the most recent cached record with stale=True.
+    """
+    from app.services.data_persistence_service import market_overview_key
     from app.services.market_data import get_market_snapshot
 
-    snapshot = get_market_snapshot(config)
-
-    major: list[StockQuoteResponse] = []
-    sectors: list[SectorQuoteResponse] = []
+    ps = _get_persistence()
+    qk = market_overview_key()
 
     try:
-        major_quotes = await run_in_threadpool(
-            stock_service.fetch_stock_realtime_batch,
-            ["000001", "399001", "000300", "000905"],
+        snapshot = get_market_snapshot(config)
+
+        major: list[StockQuoteResponse] = []
+        sectors: list[SectorQuoteResponse] = []
+
+        try:
+            major_quotes = await run_in_threadpool(
+                stock_service.fetch_stock_realtime_batch,
+                ["000001", "399001", "000300", "000905"],
+            )
+            major = [StockQuoteResponse(**dataclasses.asdict(m)) for m in major_quotes]
+        except Exception:
+            major = []
+
+        try:
+            sector_quotes = await run_in_threadpool(stock_service.fetch_sector_list, "industry")
+            sector_resp = [SectorQuoteResponse(**dataclasses.asdict(s)) for s in sector_quotes]
+            top = sorted(sector_resp, key=lambda s: s.change_pct, reverse=True)[:5]
+            bottom = sorted(sector_resp, key=lambda s: s.change_pct)[:5]
+        except Exception:
+            top, bottom = [], []
+
+        result = MarketOverviewResponse(
+            vix=snapshot.vix,
+            major_indices=major,
+            top_sectors=top,
+            bottom_sectors=bottom,
+            fetched_at=snapshot.as_of.isoformat(),
+            stale=False,
         )
-        major = [StockQuoteResponse(**dataclasses.asdict(m)) for m in major_quotes]
-    except Exception:
-        major = []
 
-    try:
-        sector_quotes = await run_in_threadpool(stock_service.fetch_sector_list, "industry")
-        sector_resp = [SectorQuoteResponse(**dataclasses.asdict(s)) for s in sector_quotes]
-        top = sorted(sector_resp, key=lambda s: s.change_pct, reverse=True)[:5]
-        bottom = sorted(sector_resp, key=lambda s: s.change_pct)[:5]
-    except Exception:
-        top, bottom = [], []
+        # Store for fallback (only if we got some data)
+        if ps and (major or top or bottom):
+            try:
+                store_data = {
+                    "vix": snapshot.vix,
+                    "major_indices": [dataclasses.asdict(m) for m in major],
+                    "top_sectors": [dataclasses.asdict(s) for s in top],
+                    "bottom_sectors": [dataclasses.asdict(s) for s in bottom],
+                }
+                ps.store("market-overview", "live", qk, store_data)
+            except Exception as store_exc:
+                logger.debug("Failed to persist market-overview: %s", store_exc)
 
-    return MarketOverviewResponse(
-        vix=snapshot.vix,
-        major_indices=major,
-        top_sectors=top,
-        bottom_sectors=bottom,
-        fetched_at=snapshot.as_of.isoformat(),
-    )
+        return result
+
+    except Exception as exc:
+        logger.warning("Live market-overview failed: %s", exc)
+
+        if ps:
+            fallback = ps.retrieve("market-overview", qk)
+            if fallback:
+                cached_data, cached_source, cached_at, _ = fallback
+                logger.info("Returning stale market-overview from %s", cached_source)
+                return MarketOverviewResponse(
+                    vix=cached_data.get("vix"),
+                    major_indices=[StockQuoteResponse(**{**d, "stale": True}) for d in cached_data.get("major_indices", [])],
+                    top_sectors=[SectorQuoteResponse(**{**d, "stale": True}) for d in cached_data.get("top_sectors", [])],
+                    bottom_sectors=[SectorQuoteResponse(**{**d, "stale": True}) for d in cached_data.get("bottom_sectors", [])],
+                    fetched_at=cached_at,
+                    stale=True,
+                    cached_at=cached_at,
+                )
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Market overview fetch failed: {exc}",
+        ) from exc
 
 
-# ---- Data Source Status Endpoint ----
+# ---- Data Source Status Endpoint (cached) ----
+
+import time as _time
+
+_ds_status_cache: dict[str, Any] = {}
+_ds_status_ts: float = 0.0
+_DS_STATUS_TTL: float = 300.0  # 5 minutes
 
 
 @app.get(
@@ -714,15 +977,330 @@ async def get_market_overview(
     summary="Data source adapter health and stats",
 )
 async def get_data_source_status() -> dict:
-    """Return per-adapter success/failure statistics from the stock data fallback chain."""
+    """Return per-adapter success/failure statistics from all data source fallback chains.
+
+    Results are cached for 5 minutes to avoid expensive health-check calls
+    on every request.  Includes real-time data adapters (stock, fund) and
+    historical data adapters (tushare, baostock, efinance, akshare, deepseek).
+    """
+    global _ds_status_cache, _ds_status_ts
+    now = _time.time()
+
+    # Return cached result if still fresh
+    if _ds_status_cache and (now - _ds_status_ts) < _DS_STATUS_TTL:
+        return _ds_status_cache
+
     stock_status = stock_service.fallback_chain.get_status()
     fund_status = fund_service.fallback_chain.get_status()
+
     # Merge: fund stats only add adapters not already in stock stats
     merged = {**stock_status}
     for name, stats in fund_status.items():
         if name not in merged:
             merged[name] = stats
+
+    # Add historical data adapter status (expensive -- only on cache miss)
+    try:
+        from app.services.historical_data_service import create_historical_data_service
+        config = load_config()
+        ds_service = get_deepseek_search_service()
+        hist_service = create_historical_data_service(config, deepseek_search_service=ds_service)
+        historical_status = hist_service.get_data_source_status()
+        merged["historical_adapters"] = historical_status
+    except Exception as exc:
+        logger.warning("Failed to get historical data source status: %s", exc)
+        merged["historical_adapters"] = {"error": str(exc)}
+
+    _ds_status_cache = merged
+    _ds_status_ts = now
     return merged
+
+
+# ---- DeepSeek Search Status Endpoint ----
+
+
+@app.get(
+    "/api/system/deepseek-status",
+    summary="DeepSeek web search service status",
+)
+async def get_deepseek_status() -> dict:
+    """Return DeepSeek web search service health, rate limiter, and circuit breaker status."""
+    ds_service = get_deepseek_search_service()
+    if ds_service is None:
+        return {
+            "enabled": False,
+            "initialized": False,
+            "error": "DeepSeek search service not initialized (check API key config)",
+        }
+
+    status = ds_service.get_status()
+    return {
+        "enabled": True,
+        "initialized": True,
+        "rate_limiter": status["rate_limiter"],
+        "circuit_breaker": status["circuit_breaker"],
+    }
+
+
+# ---- DeepSeek Q&A Endpoint ----
+
+
+class DeepSeekAskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=20000)
+
+
+class DeepSeekAskResponse(BaseModel):
+    answer: str
+    model: str
+    sources: list[str] = []
+
+
+@app.post(
+    "/api/deepseek/ask",
+    response_model=DeepSeekAskResponse,
+    summary="Ask DeepSeek a financial question",
+)
+async def post_deepseek_ask(request: DeepSeekAskRequest) -> DeepSeekAskResponse:
+    """Send a financial question to DeepSeek and return the answer.
+
+    Uses the same DeepSeek API configuration as the search service.
+    Falls back to the main LLM if DeepSeek is not configured.
+
+    The date guard middleware ensures that:
+    - The system prompt includes the real CST date.
+    - Vague date words in the user message are replaced with absolute dates.
+    - The response is validated for stale dates (retries once if stale).
+    """
+    import httpx as _httpx
+
+    ds_service = get_deepseek_search_service()
+
+    # Build the prompt with a financial-analysis system instruction
+    system_msg = (
+        "你是一个专业的金融分析师助手，具备联网搜索能力。"
+        "请务必使用联网搜索功能获取最新的市场数据和金融信息来回答用户问题。"
+        "当用户询问市场行情、股票走势、基金表现等实时信息时，必须先搜索最新数据再回答。"
+        "回答要专业、准确、有条理，并注明数据来源和时间。"
+    )
+
+    # --- Date guard: inject real date + clean user message ---
+    system_msg, user_msg = date_guard.process_request(system_msg, request.question)
+
+    if ds_service is not None:
+        # Use the DeepSeek search service's API configuration
+        base_url = ds_service.base_url
+        api_key = ds_service.api_key
+        model = ds_service.model
+        timeout = ds_service.timeout
+    else:
+        # Fall back to main LLM config
+        config = load_config(CONFIG_PATH)
+        try:
+            main_llm = get_effective_llm_config(config)
+            base_url = main_llm.base_url.rstrip("/")
+            api_key = main_llm.api_key or ""
+            model = main_llm.model
+            timeout = int(main_llm.timeout_seconds)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"No LLM configured. Please set an API key in Settings. Error: {exc}",
+            ) from exc
+
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="No API key configured. Please set an API key in Settings.",
+        )
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    # Helper: build the request body for a given system/user message pair
+    def _build_body(sys_content: str, usr_content: str) -> dict:
+        return {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": sys_content},
+                {"role": "user", "content": usr_content},
+            ],
+            "tools": [
+                {
+                    "type": "web_search",
+                    "web_search": {"enable": True},
+                }
+            ],
+            "temperature": 0.3,
+            "max_tokens": 4096,
+        }
+
+    # Helper: extract text content from API response data
+    def _extract_content(data: dict) -> str:
+        choice = data["choices"][0]
+        message = choice["message"]
+        content = message.get("content") or ""
+        tool_calls = message.get("tool_calls")
+        if tool_calls and not content:
+            parts = []
+            for tc in tool_calls:
+                func = tc.get("function", {})
+                if func.get("arguments"):
+                    parts.append(func["arguments"])
+            if parts:
+                content = "\n".join(parts)
+        return content or "未能获取到有效回答，请重试。"
+
+    # Helper: send a single request, handling the tools-parameter 400 fallback
+    async def _send_request(
+        client: _httpx.AsyncClient, body: dict
+    ) -> dict:
+        resp = await client.post(
+            f"{base_url}/chat/completions", json=body, headers=headers
+        )
+        if resp.status_code == 400:
+            logger.warning(
+                "DeepSeek API rejected tools parameter, retrying without web search"
+            )
+            body.pop("tools", None)
+            resp = await client.post(
+                f"{base_url}/chat/completions", json=body, headers=headers
+            )
+        resp.raise_for_status()
+        return resp.json()
+
+    today_cn, today_iso, _ = date_guard.get_real_date()
+
+    try:
+        async with _httpx.AsyncClient(timeout=timeout) as client:
+            # --- First attempt ---
+            body = _build_body(system_msg, user_msg)
+            data = await _send_request(client, body)
+            content = _extract_content(data)
+
+            # --- Validate response dates ---
+            is_valid, reason = date_guard.process_response(content)
+            if not is_valid:
+                logger.warning(
+                    "DeepSeek response has stale dates (%s), retrying with stronger date prompt",
+                    reason,
+                )
+                # --- Retry with explicit date emphasis ---
+                retry_system = (
+                    system_msg
+                    + f"\n\n【紧急提醒】你的上一次回答包含错误日期（{reason}）。"
+                    f"当前真实日期是{today_cn}（{today_iso}）。"
+                    f"请务必使用此日期重新搜索并回答，绝对不能使用其他日期。"
+                )
+                retry_body = _build_body(retry_system, user_msg)
+                data = await _send_request(client, retry_body)
+                content = _extract_content(data)
+
+                # Final validation
+                is_valid, reason = date_guard.process_response(content)
+                if not is_valid:
+                    logger.error(
+                        "DeepSeek response still has stale dates after retry: %s", reason
+                    )
+                    return DeepSeekAskResponse(
+                        answer=f"无法获取{today_cn}的最新数据，DeepSeek返回了过期日期（{reason}）。请稍后重试。",
+                        model=model,
+                        sources=[],
+                    )
+
+        return DeepSeekAskResponse(
+            answer=content,
+            model=model,
+            sources=[],
+        )
+    except _httpx.TimeoutException:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="DeepSeek API request timed out. Please try again.",
+        )
+    except _httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail=f"DeepSeek API error: {exc.response.text}",
+        )
+    except Exception as exc:
+        logger.error("DeepSeek ask failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"DeepSeek API call failed: {exc}",
+        ) from exc
+
+
+# ---- Data Source Selection API ----
+
+
+class DataSourcePreferenceResponse(BaseModel):
+    active_source: str
+    available_sources: list[str]
+
+
+class DataSourcePreferenceUpdate(BaseModel):
+    active_source: str = Field(min_length=1, max_length=50)
+
+
+@app.get(
+    "/api/settings/data-source",
+    response_model=DataSourcePreferenceResponse,
+    summary="Get active historical data source preference",
+)
+async def get_data_source_preference(
+    config: Config = Depends(get_config),
+) -> DataSourcePreferenceResponse:
+    """Return the currently active historical data source and available sources."""
+    try:
+        from app.services.historical_data_service import create_historical_data_service
+        service = create_historical_data_service(config)
+        return DataSourcePreferenceResponse(
+            active_source=service.get_active_source(),
+            available_sources=service.get_available_sources(),
+        )
+    except Exception as exc:
+        logger.error("Failed to get data source preference: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get data source preference: {exc}",
+        ) from exc
+
+
+@app.put(
+    "/api/settings/data-source",
+    response_model=DataSourcePreferenceResponse,
+    summary="Set active historical data source preference",
+)
+async def put_data_source_preference(
+    update: DataSourcePreferenceUpdate,
+    config: Config = Depends(get_config),
+) -> DataSourcePreferenceResponse:
+    """Set the active historical data source. Persists to config.yaml.
+
+    Use "auto" for the full fallback chain, or a specific adapter name
+    (e.g. "baostock", "tushare", "efinance", "akshare").
+    """
+    try:
+        from app.services.historical_data_service import create_historical_data_service
+        service = create_historical_data_service(config)
+        service.set_active_source(update.active_source)
+        return DataSourcePreferenceResponse(
+            active_source=service.get_active_source(),
+            available_sources=service.get_available_sources(),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        logger.error("Failed to set data source preference: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to set data source preference: {exc}",
+        ) from exc
 
 
 # ---- Analysis History Endpoint ----
@@ -1117,3 +1695,191 @@ async def get_position_summary(
             detail=f"Failed to fetch position summary: {exc}",
         ) from exc
     return PositionSummaryResponse(**result)
+
+
+# ---------------------------------------------------------------------------
+# Historical Data Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get(
+    "/api/stocks/sector-history",
+    response_model=SectorHistoryResponse,
+    summary="Get sector historical kline data",
+)
+async def get_sector_history(
+    sector_name: str = Query(..., min_length=1, description="板块名称，如 '白酒'"),
+    sector_type: str = Query("industry", description="板块类型: industry 或 concept"),
+    days: int = Query(60, ge=1, le=365, description="历史天数"),
+) -> SectorHistoryResponse:
+    """Return historical daily kline data for a sector.
+
+    On success, stores the result in MySQL for stale-data fallback.
+    When all sources fail, returns the most recent cached record with stale=True.
+    """
+    from app.services.data_persistence_service import sector_history_key
+
+    ps = _get_persistence()
+    qk = sector_history_key(sector_name, sector_type, days)
+
+    try:
+        data = await run_in_threadpool(
+            stock_service.fetch_sector_history, sector_name, sector_type, days
+        )
+        # Store successful result for future fallback
+        if ps and data:
+            try:
+                ps.store("sector-history", "live", qk, data)
+            except Exception as store_exc:
+                logger.debug("Failed to persist sector-history: %s", store_exc)
+
+        return SectorHistoryResponse(
+            sector_name=sector_name,
+            sector_type=sector_type,
+            data=[HistoryPoint(**d) for d in data],
+            fetched_at=datetime.now(timezone.utc).isoformat(),
+            stale=False,
+        )
+    except (ValueError, Exception) as exc:
+        logger.warning("Live sector-history failed for %s: %s", sector_name, exc)
+
+        # Try MySQL fallback
+        if ps:
+            fallback = ps.retrieve("sector-history", qk)
+            if fallback:
+                cached_data, cached_source, cached_at, _ = fallback
+                logger.info("Returning stale sector-history for %s from %s", sector_name, cached_source)
+                return SectorHistoryResponse(
+                    sector_name=sector_name,
+                    sector_type=sector_type,
+                    data=[HistoryPoint(**d) for d in cached_data],
+                    fetched_at=cached_at,
+                    stale=True,
+                    cached_at=cached_at,
+                )
+
+        # No fallback available
+        if isinstance(exc, ValueError):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch sector history: {exc}",
+        ) from exc
+
+
+@app.get(
+    "/api/stocks/index-history",
+    response_model=IndexHistoryResponse,
+    summary="Get stock index historical kline data",
+)
+async def get_index_history(
+    code: str = Query(..., min_length=1, description="指数代码，如 '000001'"),
+    days: int = Query(60, ge=1, le=365, description="历史天数"),
+) -> IndexHistoryResponse:
+    """Return historical daily kline data for a stock index.
+
+    On success, stores the result in MySQL for stale-data fallback.
+    When all sources fail, returns the most recent cached record with stale=True.
+    """
+    from app.services.data_persistence_service import index_history_key
+
+    ps = _get_persistence()
+    qk = index_history_key(code, days)
+
+    try:
+        data = await run_in_threadpool(
+            stock_service.fetch_index_history, code, days
+        )
+        if ps and data:
+            try:
+                ps.store("index-history", "live", qk, data)
+            except Exception as store_exc:
+                logger.debug("Failed to persist index-history: %s", store_exc)
+
+        return IndexHistoryResponse(
+            index_code=code,
+            data=[HistoryPoint(**d) for d in data],
+            fetched_at=datetime.now(timezone.utc).isoformat(),
+            stale=False,
+        )
+    except (ValueError, Exception) as exc:
+        logger.warning("Live index-history failed for %s: %s", code, exc)
+
+        if ps:
+            fallback = ps.retrieve("index-history", qk)
+            if fallback:
+                cached_data, cached_source, cached_at, _ = fallback
+                logger.info("Returning stale index-history for %s from %s", code, cached_source)
+                return IndexHistoryResponse(
+                    index_code=code,
+                    data=[HistoryPoint(**d) for d in cached_data],
+                    fetched_at=cached_at,
+                    stale=True,
+                    cached_at=cached_at,
+                )
+
+        if isinstance(exc, ValueError):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch index history: {exc}",
+        ) from exc
+
+
+@app.get(
+    "/api/funds/nav-history",
+    response_model=FundNavHistoryResponse,
+    summary="Get fund NAV historical data",
+)
+async def get_fund_nav_history(
+    code: str = Query(..., min_length=1, description="基金代码，如 '000510'"),
+    days: int = Query(30, ge=1, le=365, description="历史天数"),
+) -> FundNavHistoryResponse:
+    """Return historical NAV data for a fund.
+
+    On success, stores the result in MySQL for stale-data fallback.
+    When all sources fail, returns the most recent cached record with stale=True.
+    """
+    from app.services.data_persistence_service import fund_nav_history_key
+
+    ps = _get_persistence()
+    qk = fund_nav_history_key(code, days)
+
+    try:
+        data = await run_in_threadpool(
+            fund_service.fetch_fund_nav_history, code, days
+        )
+        if ps and data:
+            try:
+                ps.store("fund-nav-history", "live", qk, data)
+            except Exception as store_exc:
+                logger.debug("Failed to persist fund-nav-history: %s", store_exc)
+
+        return FundNavHistoryResponse(
+            fund_code=code,
+            data=[FundNavHistoryPoint(**d) for d in data],
+            fetched_at=datetime.now(timezone.utc).isoformat(),
+            stale=False,
+        )
+    except (ValueError, Exception) as exc:
+        logger.warning("Live fund-nav-history failed for %s: %s", code, exc)
+
+        if ps:
+            fallback = ps.retrieve("fund-nav-history", qk)
+            if fallback:
+                cached_data, cached_source, cached_at, _ = fallback
+                logger.info("Returning stale fund-nav-history for %s from %s", code, cached_source)
+                return FundNavHistoryResponse(
+                    fund_code=code,
+                    data=[FundNavHistoryPoint(**d) for d in cached_data],
+                    fetched_at=cached_at,
+                    stale=True,
+                    cached_at=cached_at,
+                )
+
+        if isinstance(exc, ValueError):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch fund NAV history: {exc}",
+        ) from exc

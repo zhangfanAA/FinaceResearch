@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 import requests
 
 from app.services.data_sources.base import DataSourceAdapter, DataSourceResult
+from app.services.data_sources.retry import resilient_get
 
 logger = logging.getLogger(__name__)
 
@@ -124,12 +125,19 @@ class EastMoneyAdapter(DataSourceAdapter):
     # ---- helpers ----
 
     def _get_json(self, params: dict) -> dict | None:
-        """Issue GET to the push2 clist endpoint and return parsed JSON."""
+        """Issue GET to the push2 clist endpoint and return parsed JSON.
+
+        Uses ``resilient_get`` with automatic retry (4 attempts, exponential
+        backoff) to handle transient connection errors.
+        """
         merged = {**_COMMON_PARAMS, **params}
-        resp = self._session.get(_BASE_URL, params=merged, timeout=self._timeout)
-        resp.raise_for_status()
-        body = resp.json()
-        return body
+        resp = resilient_get(
+            _BASE_URL,
+            params=merged,
+            timeout=self._timeout,
+            session=self._session,
+        )
+        return resp.json()
 
     # ---- DataSourceAdapter interface ----
 
@@ -265,8 +273,7 @@ class EastMoneyAdapter(DataSourceAdapter):
         for code in codes:
             try:
                 url = f"https://fundgz.1234567.com.cn/js/{code}.js"
-                resp = self._session.get(url, timeout=self._timeout)
-                resp.raise_for_status()
+                resp = resilient_get(url, timeout=self._timeout, session=self._session)
                 text = resp.text
                 # Response format: jsonpgz({...});
                 if "(" not in text:

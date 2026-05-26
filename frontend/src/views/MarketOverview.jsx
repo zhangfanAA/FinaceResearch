@@ -10,15 +10,16 @@
  * - 自动刷新和数据新鲜度追踪
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getMarketOverview } from '../api/client';
 import AutoRefreshControls from '../components/AutoRefreshControls';
+import DataSourceBadge from '../components/DataSourceBadge';
 import DataFreshnessBadge from '../components/DataFreshnessBadge';
 import ErrorWithRetry from '../components/ErrorWithRetry';
 import SkeletonTable from '../components/SkeletonTable';
-import useAutoRefresh from '../hooks/useAutoRefresh';
-import useDataFreshness from '../hooks/useDataFreshness';
+import { IndexTrendChart } from '../components/TrendChartWrapper';
+import useStaleData from '../hooks/useStaleData';
 
 /* ---------- helpers ---------- */
 
@@ -295,7 +296,7 @@ function MarketSummary({ risingCount, fallingCount, avgChange, lastUpdate }) {
  * @param {Object} props.quote - 行情数据对象（current_price, change_pct, change_amount, amount, volume）
  * @returns {JSX.Element} 指数卡片 JSX
  */
-function IndexCard({ name, quote }) {
+function IndexCard({ name, quote, selected, onClick }) {
   const { t } = useTranslation();
   const tone = getChangeTone(quote?.change_pct);
   const changeAmt = quote?.change_amount;
@@ -303,7 +304,13 @@ function IndexCard({ name, quote }) {
   const hasVolume = quote?.volume != null;
 
   return (
-    <article className="market-index-card">
+    <article
+      className={`market-index-card ${selected ? 'market-index-card--selected' : ''}`}
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick?.(); }}
+    >
       <div className="market-index-card__name">{name}</div>
       <div className="market-index-card__price">{formatNumber(quote?.current_price, 2)}</div>
       <div className={`market-index-card__change market-index-card__change--${tone}`}>
@@ -453,10 +460,7 @@ function MarketOverviewSkeleton() {
  */
 export default function MarketOverview({ onNavigateTab }) {
   const { t } = useTranslation();
-  const [overview, setOverview] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [lastFetchedAt, setLastFetchedAt] = useState(null);
+  const [selectedIndex, setSelectedIndex] = useState('000001');
 
   const INDEX_NAME_MAP = useMemo(
     () => ({
@@ -468,33 +472,26 @@ export default function MarketOverview({ onNavigateTab }) {
     [t],
   );
 
-  /**
-   * 加载市场总览数据
-   * @function loadOverview
-   * @description 从 API 获取 VIX、主要指数和板块涨跌数据
-   */
-  const loadOverview = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      setOverview(await getMarketOverview());
-      setLastFetchedAt(Date.now());
-    } catch (err) {
-      setOverview(null);
-      setError(err.message || '市场总览数据加载失败');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const { autoRefreshEnabled, toggleAutoRefresh, secondsUntilRefresh, markRefreshed } =
-    useAutoRefresh({ onRefresh: loadOverview, intervalMs: 30000, enabled: true, paused: false });
-
-  const freshness = useDataFreshness(lastFetchedAt, { fresh: 30, stale: 90 });
-
-  useEffect(() => {
-    loadOverview();
-  }, [loadOverview]);
+  // 使用 useStaleData 管理市场总览数据，支持分时刷新
+  const {
+    data: overview,
+    loading,
+    refreshing,
+    error,
+    lastSuccessfulFetch: lastFetchedAt,
+    refresh: refreshOverview,
+    autoRefreshEnabled,
+    toggleAutoRefresh,
+    secondsUntilRefresh,
+    freshness,
+    serverStale,
+    cachedAt,
+  } = useStaleData(
+    useCallback(async () => {
+      return await getMarketOverview();
+    }, []),
+    { intervalMs: 60000, enabled: true, staggerMs: 0, freshThreshold: 60, staleThreshold: 180 }
+  );
 
   const vix = overview?.vix;
   const majorIndices = overview?.major_indices || [];
@@ -540,18 +537,14 @@ export default function MarketOverview({ onNavigateTab }) {
           <p>{t('marketOverview.subtitle')}</p>
         </div>
         <div className="section-header__actions">
-          {overview?.data_source === 'mock' ? (
-            <span className="mock-data-badge" title={t('dataSource.mockWarning')}>
-              <span className="mock-data-badge__dot" />
-              {t('dataSource.mockWarning')}
-            </span>
-          ) : overview?.data_source ? (
+          <DataSourceBadge />
+          {overview?.data_source && overview.data_source !== 'none' ? (
             <span className="real-data-badge">
               <span className="real-data-badge__dot" />
               {overview.data_source}
             </span>
           ) : null}
-          <DataFreshnessBadge level={freshness.level} label={freshness.label} />
+          <DataFreshnessBadge level={freshness.level} label={freshness.label} serverStale={serverStale} cachedAt={cachedAt} />
           <AutoRefreshControls
             enabled={autoRefreshEnabled}
             onToggle={toggleAutoRefresh}
@@ -560,18 +553,19 @@ export default function MarketOverview({ onNavigateTab }) {
           <button
             type="button"
             className="button button--secondary"
-            onClick={() => { loadOverview(); markRefreshed(); }}
-            disabled={loading}
+            onClick={refreshOverview}
+            disabled={loading || refreshing}
           >
-            {loading ? t('marketOverview.refreshing') : t('marketOverview.refresh')}
+            {(loading || refreshing) ? t('marketOverview.refreshing') : t('marketOverview.refresh')}
           </button>
         </div>
       </div>
 
-      {error ? <ErrorWithRetry message={error} onRetry={loadOverview} retrying={loading} /> : null}
+      {error && !overview ? <ErrorWithRetry message={error} onRetry={refreshOverview} retrying={loading || refreshing} /> : null}
       {loading && !overview ? <MarketOverviewSkeleton /> : null}
+      {error && overview ? <div className="inline-alert inline-alert--warning">{error}</div> : null}
 
-      {!loading && !error && overview ? (
+      {overview ? (
         <>
           {/* Market Summary */}
           <MarketSummary
@@ -590,10 +584,24 @@ export default function MarketOverview({ onNavigateTab }) {
                   key={idx.stock_code}
                   name={INDEX_NAME_MAP[idx.stock_code] || idx.stock_name || idx.stock_code}
                   quote={idx}
+                  selected={idx.stock_code === selectedIndex}
+                  onClick={() => setSelectedIndex(idx.stock_code)}
                 />
               ))}
             </div>
           </div>
+
+          {/* Index Trend Chart */}
+          {selectedIndex && (
+            <div className="subpanel">
+              <IndexTrendChart
+                indexCode={selectedIndex}
+                indexName={INDEX_NAME_MAP[selectedIndex] || selectedIndex}
+                height={260}
+                showVolume
+              />
+            </div>
+          )}
 
           {/* Top Sectors */}
           {topSectors.length > 0 ? (

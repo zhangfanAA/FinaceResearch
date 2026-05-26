@@ -16,12 +16,14 @@ import {
   getLlmSettings,
   getLogs,
   getLots,
+  getMockSettings,
   getStatus,
   saveLlmSettings,
+  setMockSettings,
   testLlmSettings,
   triggerRun,
 } from './api/client';
-import DataSourceStatus from './components/DataSourceStatus';
+import DataSourceSelector from './components/DataSourceSelector';
 import ErrorBoundary from './components/ErrorBoundary';
 import GlobalSearch from './components/GlobalSearch';
 import LanguageSwitcher from './components/LanguageSwitcher';
@@ -35,6 +37,7 @@ const StockSector = lazy(() => import('./views/StockSector'));
 const FundSector = lazy(() => import('./views/FundSector'));
 const MarketOverview = lazy(() => import('./views/MarketOverview'));
 const WatchlistManagement = lazy(() => import('./views/WatchlistManagement'));
+const DeepSeekSearchPanel = lazy(() => import('./components/DeepSeekSearchPanel'));
 
 /**
  * 格式化 JSON 值用于显示
@@ -243,7 +246,7 @@ function StatusSection({ status, loading, error, onRefresh }) {
  * @param {Function} props.onTest - 测试连接回调
  * @returns {JSX.Element} 设置管理区块
  */
-function SettingsSection({ settings, setSettings, loading, loadError, saveState, testState, onSave, onTest }) {
+function SettingsSection({ settings, setSettings, loading, loadError, saveState, testState, onSave, onTest, mockEnabled, mockLoading, onToggleMock }) {
   const { t } = useTranslation();
 
   /**
@@ -292,7 +295,29 @@ function SettingsSection({ settings, setSettings, loading, loadError, saveState,
         <div className="subpanel__header">
           <h3>{t('dataSource.title')}</h3>
         </div>
-        <DataSourceStatus />
+        <DataSourceSelector />
+      </div>
+
+      <div className="subpanel">
+        <div className="subpanel__header">
+          <h3>{t('settings.mock.title', 'Mock 数据')}</h3>
+        </div>
+        <div className="settings-mock-toggle">
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={mockEnabled}
+              onChange={onToggleMock}
+              disabled={mockLoading}
+            />
+            <span>{t('settings.mock.enable', '启用 Mock 数据回退')}</span>
+          </label>
+          <p className="settings-mock-hint">
+            {mockEnabled
+              ? t('settings.mock.enabledHint', '当真实数据获取失败时，将使用模拟数据作为回退')
+              : t('settings.mock.disabledHint', '已关闭 Mock 数据，获取失败时将显示暂无数据')}
+          </p>
+        </div>
       </div>
 
       <form className="settings-form" onSubmit={(e) => { e.preventDefault(); onSave(); }}>
@@ -562,6 +587,9 @@ export default function App() {
   const [saveState, setSaveState] = useState({ pending: false, message: '', error: '' });
   const [testState, setTestState] = useState({ pending: false, message: '', error: '' });
 
+  const [mockEnabled, setMockEnabled] = useState(false);
+  const [mockLoading, setMockLoading] = useState(true);
+
   const [lots, setLots] = useState([]);
   const [lotsLoading, setLotsLoading] = useState(true);
   const [lotsError, setLotsError] = useState('');
@@ -578,6 +606,7 @@ export default function App() {
     { key: 'fund-sector', label: t('nav.fundSector') },
     { key: 'market-overview', label: t('nav.marketOverview') },
     { key: 'watchlist-management', label: t('nav.watchlistManagement') },
+    { key: 'deepseek-qa', label: t('nav.deepseekQa', 'DeepSeek Q&A') },
   ], [t]);
 
   /**
@@ -603,6 +632,36 @@ export default function App() {
     catch (e) { setSettings(EMPTY_SETTINGS); setSettingsLoadError(e.message); }
     finally { setSettingsLoading(false); }
   }, [EMPTY_SETTINGS]);
+
+  /**
+   * 加载 mock 设置
+   * @function loadMockSettings
+   */
+  const loadMockSettings = useCallback(async () => {
+    setMockLoading(true);
+    try {
+      const result = await getMockSettings();
+      setMockEnabled(result.enable_mock);
+    } catch {
+      // default to false on error
+    } finally {
+      setMockLoading(false);
+    }
+  }, []);
+
+  /**
+   * 切换 mock 开关
+   * @function handleToggleMock
+   */
+  const handleToggleMock = useCallback(async () => {
+    const newValue = !mockEnabled;
+    setMockEnabled(newValue);
+    try {
+      await setMockSettings(newValue);
+    } catch {
+      setMockEnabled(!newValue); // revert on error
+    }
+  }, [mockEnabled]);
 
   /**
    * 加载模拟持仓数据
@@ -634,7 +693,7 @@ export default function App() {
    * @description 并行加载系统状态、LLM 设置、持仓和日志数据
    */
   const refreshAll = useCallback(async () => {
-    await Promise.all([loadStatus(), loadSettings(), loadLots(), loadLogs()]);
+    await Promise.all([loadStatus(), loadSettings(), loadLots(), loadLogs(), loadMockSettings()]);
   }, [loadLogs, loadLots, loadSettings, loadStatus]);
 
   // R key to refresh current tab data (skipped when in input fields)
@@ -721,7 +780,8 @@ export default function App() {
             <StatusSection status={status} loading={statusLoading} error={statusError} onRefresh={refreshAll} />
             <SettingsSection settings={settings} setSettings={setSettings} loading={settingsLoading}
               loadError={settingsLoadError} saveState={saveState} testState={testState}
-              onSave={handleSaveSettings} onTest={handleTestSettings} />
+              onSave={handleSaveSettings} onTest={handleTestSettings}
+              mockEnabled={mockEnabled} mockLoading={mockLoading} onToggleMock={handleToggleMock} />
             <TriggerSection onTriggered={refreshAll} />
             <LotsSection lots={lots} loading={lotsLoading} error={lotsError} onRefresh={loadLots} />
             <LogsSection logs={logs} loading={logsLoading} error={logsError} onRefresh={loadLogs} />
@@ -748,6 +808,12 @@ export default function App() {
           <div className="layout-grid">
             <Suspense fallback={<SkeletonTable rows={5} columns={7} />}>
               <WatchlistManagement />
+            </Suspense>
+          </div>
+        ) : activeTab === 'deepseek-qa' ? (
+          <div className="layout-grid">
+            <Suspense fallback={<SkeletonTable rows={3} columns={1} />}>
+              <DeepSeekSearchPanel />
             </Suspense>
           </div>
         ) : null}

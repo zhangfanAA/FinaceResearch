@@ -17,6 +17,7 @@ import AIWindIndicator from '../components/AIWindIndicator';
 import AnalysisHistory from '../components/AnalysisHistory';
 import AnalysisLoadingState from '../components/AnalysisLoadingState';
 import AutoRefreshControls from '../components/AutoRefreshControls';
+import DataSourceBadge from '../components/DataSourceBadge';
 import ExportButton from '../components/ExportButton';
 import DataFreshnessBadge from '../components/DataFreshnessBadge';
 import ErrorWithRetry from '../components/ErrorWithRetry';
@@ -24,9 +25,11 @@ import SearchAutocomplete from '../components/SearchAutocomplete';
 import SentimentMeter from '../components/SentimentMeter';
 import SkeletonTable from '../components/SkeletonTable';
 import Sparkline from '../components/Sparkline';
+import { FundNavTrendChart } from '../components/TrendChartWrapper';
 import WatchlistPanel from '../components/WatchlistPanel';
 import useAutoRefresh from '../hooks/useAutoRefresh';
 import useDataFreshness from '../hooks/useDataFreshness';
+import useStaleData from '../hooks/useStaleData';
 
 /**
  * 格式化数字显示
@@ -207,6 +210,7 @@ function FundAnalysisResult({ analysis, holdingDays, t }) {
             {navTrendLabel[analysis.nav_trend] || analysis.nav_trend}
           </span>
         </div>
+        {analysis.fund_code && <FundNavTrendChart fundCode={analysis.fund_code} height={200} />}
       </section>
 
       {analysis.news_highlights?.length > 0 ? (
@@ -273,9 +277,6 @@ function FundAnalysisResult({ analysis, holdingDays, t }) {
  */
 export default function FundSector() {
   const { t } = useTranslation();
-  const [fundHoldings, setFundHoldings] = useState([]);
-  const [fundHoldingsLoading, setFundHoldingsLoading] = useState(true);
-  const [fundHoldingsError, setFundHoldingsError] = useState('');
   const [selectedHolding, setSelectedHolding] = useState(null);
   const [fundCodeInput, setFundCodeInput] = useState('');
   const [customPrompt, setCustomPrompt] = useState('');
@@ -289,39 +290,38 @@ export default function FundSector() {
   const [stepIndex, setStepIndex] = useState(0);
   const [showHistory, setShowHistory] = useState(false);
   const [showWatchlist, setShowWatchlist] = useState(false);
-  const [lastHoldingsFetchedAt, setLastHoldingsFetchedAt] = useState(null);
 
   const ANALYSIS_STEPS = [t('fundSector.steps.0'), t('fundSector.steps.1'), t('fundSector.steps.2')];
 
   /** Whether a fund code is available for analysis */
   const hasCode = fundCodeInput.trim().length > 0;
 
-  const fundSuggestions = useMemo(() => {
-    return fundHoldings.map((h) => ({ code: h.code, label: h.code, sub: h.name || '' }));
-  }, [fundHoldings]);
-
-  /** Load fund holdings */
-  const loadFundHoldings = useCallback(async () => {
-    setFundHoldingsLoading(true); setFundHoldingsError('');
-    try {
+  // 使用 useStaleData 管理基金持仓数据，支持分时刷新
+  const {
+    data: fundHoldings,
+    loading: fundHoldingsLoading,
+    refreshing: fundHoldingsRefreshing,
+    error: fundHoldingsError,
+    lastSuccessfulFetch: lastHoldingsFetchedAt,
+    refresh: refreshFundHoldings,
+    markRefreshed,
+    autoRefreshEnabled,
+    toggleAutoRefresh,
+    secondsUntilRefresh,
+    freshness: holdingsFreshness,
+    serverStale,
+    cachedAt,
+  } = useStaleData(
+    useCallback(async () => {
       const response = await getFundHoldings();
-      setFundHoldings(Array.isArray(response) ? response : []);
-      setLastHoldingsFetchedAt(Date.now());
-    } catch (err) {
-      setFundHoldings([]);
-      setFundHoldingsError(err.message || '持仓加载失败');
-    } finally {
-      setFundHoldingsLoading(false);
-    }
-  }, []);
+      return Array.isArray(response) ? response : [];
+    }, []),
+    { intervalMs: 60000, enabled: true, paused: analyzing, staggerMs: 10000, freshThreshold: 60, staleThreshold: 300 }
+  );
 
-  const { autoRefreshEnabled, toggleAutoRefresh, secondsUntilRefresh, markRefreshed } = useAutoRefresh({
-    onRefresh: loadFundHoldings, intervalMs: 300000, enabled: true, paused: analyzing,
-  });
-
-  const holdingsFreshness = useDataFreshness(lastHoldingsFetchedAt, { fresh: 60, stale: 300 });
-
-  useEffect(() => { loadFundHoldings(); }, [loadFundHoldings]);
+  const fundSuggestions = useMemo(() => {
+    return (fundHoldings || []).map((h) => ({ code: h.code, label: h.code, sub: h.name || '' }));
+  }, [fundHoldings]);
 
   useEffect(() => {
     let timer = null;
@@ -397,11 +397,12 @@ export default function FundSector() {
           <p>{t('fundSector.subtitle')}</p>
         </div>
         <div className="section-header__actions">
-          <DataFreshnessBadge level={holdingsFreshness.level} label={holdingsFreshness.label} />
+          <DataSourceBadge />
+          <DataFreshnessBadge level={holdingsFreshness.level} label={holdingsFreshness.label} serverStale={serverStale} cachedAt={cachedAt} />
           <AutoRefreshControls enabled={autoRefreshEnabled} onToggle={toggleAutoRefresh}
             secondsUntilRefresh={secondsUntilRefresh} paused={analyzing} />
           <button type="button" className="button button--secondary"
-            onClick={() => { loadFundHoldings(); markRefreshed(); }}>{t('fundSector.refreshHoldings')}</button>
+            onClick={() => { refreshFundHoldings(); markRefreshed(); }}>{t('fundSector.refreshHoldings')}</button>
           <button type="button" className={`button ${showWatchlist ? '' : 'button--secondary'}`}
             onClick={() => { setShowWatchlist((p) => !p); setShowHistory(false); }}>
             {t('fundSector.watchlist')}
@@ -428,10 +429,11 @@ export default function FundSector() {
             {/* Holdings */}
             <div className="subpanel">
               <div className="subpanel__header"><h3>{t('fundSector.sidebar.holdings')}</h3></div>
-              {fundHoldingsError ? <ErrorWithRetry message={fundHoldingsError} onRetry={loadFundHoldings} retrying={fundHoldingsLoading} /> : null}
-              {fundHoldingsLoading && fundHoldings.length === 0 ? <SkeletonTable rows={3} columns={3} /> : null}
-              {!fundHoldingsLoading && fundHoldings.length === 0 && !fundHoldingsError ? <p className="empty-state">{t('fundSector.sidebar.noHoldings')}</p> : null}
-              {!fundHoldingsLoading && fundHoldings.length > 0 ? (
+              {fundHoldingsError && (!fundHoldings || fundHoldings.length === 0) ? <ErrorWithRetry message={fundHoldingsError} onRetry={refreshFundHoldings} retrying={fundHoldingsLoading || fundHoldingsRefreshing} /> : null}
+              {fundHoldingsLoading && (!fundHoldings || fundHoldings.length === 0) ? <SkeletonTable rows={3} columns={3} /> : null}
+              {!fundHoldingsLoading && (!fundHoldings || fundHoldings.length === 0) && !fundHoldingsError ? <p className="empty-state">{t('fundSector.sidebar.noHoldings')}</p> : null}
+              {fundHoldingsError && fundHoldings && fundHoldings.length > 0 ? <div className="inline-alert inline-alert--warning">{fundHoldingsError}</div> : null}
+              {fundHoldings && fundHoldings.length > 0 ? (
                 <div className="holding-card-list">
                   {fundHoldings.map((h) => (
                     <HoldingCard key={h.id} holding={h} active={selectedHolding?.id === h.id}

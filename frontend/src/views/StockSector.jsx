@@ -17,16 +17,19 @@ import { getStockSectors, getStockRealtime, analyzeStockSector } from '../api/cl
 import AnalysisHistory from '../components/AnalysisHistory';
 import AnalysisLoadingState from '../components/AnalysisLoadingState';
 import AutoRefreshControls from '../components/AutoRefreshControls';
+import DataSourceBadge from '../components/DataSourceBadge';
 import ExportButton from '../components/ExportButton';
 import DataFreshnessBadge from '../components/DataFreshnessBadge';
 import ErrorWithRetry from '../components/ErrorWithRetry';
 import SearchAutocomplete from '../components/SearchAutocomplete';
 import SentimentMeter from '../components/SentimentMeter';
 import SkeletonTable from '../components/SkeletonTable';
+import { SectorTrendChart } from '../components/TrendChartWrapper';
 import TechnicalChart from '../components/TechnicalChart';
 import WatchlistPanel from '../components/WatchlistPanel';
 import useAutoRefresh from '../hooks/useAutoRefresh';
 import useDataFreshness from '../hooks/useDataFreshness';
+import useStaleData from '../hooks/useStaleData';
 import useToast from '../hooks/useToast';
 
 const COMMON_STOCK_CODES = [
@@ -281,6 +284,13 @@ function SectorDetailPanel({ sector, onAnalyzeSector, onAnalyzeStock }) {
         <div className="sector-detail__name">{sector.sector_name}</div>
       </div>
 
+      <SectorTrendChart
+        sectorName={sector.sector_name}
+        sectorType={sector.sector_type || 'industry'}
+        height={220}
+        showVolume
+      />
+
       <div className="sector-detail__stocks">
         <h4>{t('stockSector.sectorDetail.topStocks')}</h4>
         {loadingStocks ? (
@@ -335,11 +345,14 @@ function SectorDetailPanel({ sector, onAnalyzeSector, onAnalyzeStock }) {
 function SectorRankingTable({ sectors, loading, error, selectedSector, onSelect, onRetry }) {
   const { t } = useTranslation();
   if (loading) return <SkeletonTable rows={8} columns={6} />;
-  if (error) return <ErrorWithRetry message={error} onRetry={onRetry} />;
-  if (!sectors || sectors.length === 0) return <p className="empty-state">{t('stockSector.table.empty')}</p>;
+  if (!sectors || sectors.length === 0) {
+    if (error) return <ErrorWithRetry message={error} onRetry={onRetry} />;
+    return <p className="empty-state">{t('stockSector.table.empty')}</p>;
+  }
 
   return (
     <div className="table-wrap sector-table-wrap">
+      {error && <div className="inline-alert inline-alert--warning">{error}</div>}
       <table className="sector-table">
         <thead>
           <tr>
@@ -501,9 +514,6 @@ function AnalysisResultPanel({ analysis }) {
 export default function StockSector() {
   const { t } = useTranslation();
   const [sectorType, setSectorType] = useState('industry');
-  const [sectors, setSectors] = useState([]);
-  const [sectorsLoading, setSectorsLoading] = useState(false);
-  const [sectorsError, setSectorsError] = useState('');
   const [selectedSector, setSelectedSector] = useState(null);
   const [stockInput, setStockInput] = useState('');
   const [analysis, setAnalysis] = useState(null);
@@ -512,40 +522,31 @@ export default function StockSector() {
   const [stepIndex, setStepIndex] = useState(0);
   const [showHistory, setShowHistory] = useState(false);
   const [showWatchlist, setShowWatchlist] = useState(false);
-  const lastFetchedAtRef = useRef(null);
-  const [lastFetchedAt, setLastFetchedAt] = useState(null);
 
   const ANALYSIS_STEPS = [t('stockSector.steps.0'), t('stockSector.steps.1'), t('stockSector.steps.2')];
 
-  /**
-   * 加载板块数据
-   * @function loadSectors
-   * @param {string} type - 板块类型（industry/concept）
-   * @description 从 API 获取板块排名数据，更新最后获取时间
-   */
-  const loadSectors = useCallback(async (type) => {
-    setSectorsLoading(true); setSectorsError('');
-    try {
-      const data = await getStockSectors(type, 20);
-      setSectors(Array.isArray(data) ? data : []);
-      const now = Date.now();
-      lastFetchedAtRef.current = now;
-      setLastFetchedAt(now);
-    } catch (err) {
-      setSectors([]);
-      setSectorsError(err.message || '板块数据加载失败');
-    } finally {
-      setSectorsLoading(false);
-    }
-  }, []);
-
-  const { autoRefreshEnabled, toggleAutoRefresh, secondsUntilRefresh, markRefreshed } = useAutoRefresh({
-    onRefresh: () => loadSectors(sectorType), intervalMs: 60000, enabled: true, paused: analyzing,
-  });
-
-  const freshness = useDataFreshness(lastFetchedAt, { fresh: 60, stale: 180 });
-
-  useEffect(() => { loadSectors(sectorType); }, [sectorType, loadSectors]);
+  // 使用 useStaleData 管理板块数据，支持分时刷新
+  const {
+    data: sectors,
+    loading: sectorsLoading,
+    refreshing: sectorsRefreshing,
+    error: sectorsError,
+    lastSuccessfulFetch: lastFetchedAt,
+    refresh: refreshSectors,
+    markRefreshed,
+    autoRefreshEnabled,
+    toggleAutoRefresh,
+    secondsUntilRefresh,
+    freshness,
+    serverStale,
+    cachedAt,
+  } = useStaleData(
+    useCallback(async () => {
+      const data = await getStockSectors(sectorType, 20);
+      return Array.isArray(data) ? data : [];
+    }, [sectorType]),
+    { intervalMs: 60000, enabled: true, paused: analyzing, staggerMs: 5000, freshThreshold: 60, staleThreshold: 180 }
+  );
 
   useEffect(() => {
     let timer = null;
@@ -587,11 +588,16 @@ export default function StockSector() {
    * 处理板块类型切换
    * @function handleSectorTypeChange
    * @param {string} type - 板块类型（industry/concept）
-   * @description 切换板块类型时清除选中状态和分析结果
+   * @description 切换板块类型时清除选中状态和分析结果，useStaleData 会自动重新获取数据
    */
   const handleSectorTypeChange = useCallback((type) => {
     setSectorType(type); setSelectedSector(null); setAnalysis(null); setAnalysisError('');
   }, []);
+
+  // sectorType 变化时自动刷新（useStaleData 的 fetchFn 依赖 sectorType）
+  useEffect(() => {
+    refreshSectors();
+  }, [sectorType, refreshSectors]);
 
   /**
    * 处理板块选中
@@ -668,12 +674,13 @@ export default function StockSector() {
           <p>{t('stockSector.subtitle')}</p>
         </div>
         <div className="section-header__actions">
-          <DataFreshnessBadge level={freshness.level} label={freshness.label} />
+          <DataSourceBadge />
+          <DataFreshnessBadge level={freshness.level} label={freshness.label} serverStale={serverStale} cachedAt={cachedAt} />
           <AutoRefreshControls enabled={autoRefreshEnabled} onToggle={toggleAutoRefresh}
             secondsUntilRefresh={secondsUntilRefresh} paused={analyzing} />
           <button type="button" className="button button--secondary"
-            onClick={() => { loadSectors(sectorType); markRefreshed(); }} disabled={sectorsLoading}>
-            {sectorsLoading ? t('stockSector.refreshing') : t('stockSector.refresh')}
+            onClick={() => { refreshSectors(); markRefreshed(); }} disabled={sectorsLoading || sectorsRefreshing}>
+            {(sectorsLoading || sectorsRefreshing) ? t('stockSector.refreshing') : t('stockSector.refresh')}
           </button>
         </div>
       </div>
@@ -706,7 +713,7 @@ export default function StockSector() {
           <div className="stock-sector-layout">
             <div className="stock-sector-layout__main">
               <SectorRankingTable sectors={sectors} loading={sectorsLoading} error={sectorsError}
-                selectedSector={selectedSector} onSelect={handleSelectSector} onRetry={() => loadSectors(sectorType)} />
+                selectedSector={selectedSector} onSelect={handleSelectSector} onRetry={refreshSectors} />
 
               {selectedSector && !analyzing && !analysis ? (
                 <SectorDetailPanel

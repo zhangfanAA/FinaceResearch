@@ -169,6 +169,118 @@ CREATE TABLE IF NOT EXISTS analysis_logs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 """
 
+# ---------------------------------------------------------------------------
+# Data Source Cache / Persistence Table
+# ---------------------------------------------------------------------------
+# Stores API responses from each data source so that when all live sources
+# fail, the system can fall back to the most recent stored record.
+# Composite unique key: (endpoint, source, query_key) prevents duplicates.
+# fetched_at timestamp prevents "fake refreshes" (showing stale as fresh).
+
+_DATA_SOURCE_CACHE_DDL = """
+CREATE TABLE IF NOT EXISTS data_source_cache (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    endpoint VARCHAR(100) NOT NULL COMMENT 'API endpoint identifier, e.g. sector-history',
+    source VARCHAR(50) NOT NULL COMMENT 'Data source name: tushare/baostock/efinance/akshare/eastmoney',
+    query_key VARCHAR(255) NOT NULL COMMENT 'Hash or composite of query params',
+    data JSON NOT NULL COMMENT 'Cached API response payload',
+    fetched_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When data was originally fetched',
+    stale TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 if this record was served as stale fallback',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_endpoint_source_query (endpoint, source, query_key),
+    INDEX idx_endpoint (endpoint),
+    INDEX idx_source (source),
+    INDEX idx_fetched_at (fetched_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+
+# ---------------------------------------------------------------------------
+# DeepSeek Search Cache Tables
+# ---------------------------------------------------------------------------
+# Per-data-type tables storing DeepSeek web search results with a sliding
+# window (100 records per query_key).  Used as last-resort fallback when
+# all traditional data sources and the live DeepSeek API are unavailable.
+
+_DEEPSEEK_SECTOR_HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS deepseek_sector_history (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    query_key VARCHAR(255) NOT NULL,
+    data JSON NOT NULL,
+    source VARCHAR(50) DEFAULT 'deepseek',
+    fetched_at DOUBLE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_query_key (query_key),
+    INDEX idx_fetched_at (fetched_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+_DEEPSEEK_INDEX_HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS deepseek_index_history (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    query_key VARCHAR(255) NOT NULL,
+    data JSON NOT NULL,
+    source VARCHAR(50) DEFAULT 'deepseek',
+    fetched_at DOUBLE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_query_key (query_key),
+    INDEX idx_fetched_at (fetched_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+_DEEPSEEK_FUND_NAV_HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS deepseek_fund_nav_history (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    query_key VARCHAR(255) NOT NULL,
+    data JSON NOT NULL,
+    source VARCHAR(50) DEFAULT 'deepseek',
+    fetched_at DOUBLE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_query_key (query_key),
+    INDEX idx_fetched_at (fetched_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+_DEEPSEEK_SECTOR_REALTIME_DDL = """
+CREATE TABLE IF NOT EXISTS deepseek_sector_realtime (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    query_key VARCHAR(255) NOT NULL,
+    data JSON NOT NULL,
+    source VARCHAR(50) DEFAULT 'deepseek',
+    fetched_at DOUBLE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_query_key (query_key),
+    INDEX idx_fetched_at (fetched_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+_DEEPSEEK_STOCK_REALTIME_DDL = """
+CREATE TABLE IF NOT EXISTS deepseek_stock_realtime (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    query_key VARCHAR(255) NOT NULL,
+    data JSON NOT NULL,
+    source VARCHAR(50) DEFAULT 'deepseek',
+    fetched_at DOUBLE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_query_key (query_key),
+    INDEX idx_fetched_at (fetched_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+_DEEPSEEK_MARKET_OVERVIEW_DDL = """
+CREATE TABLE IF NOT EXISTS deepseek_market_overview (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    query_key VARCHAR(255) NOT NULL,
+    data JSON NOT NULL,
+    source VARCHAR(50) DEFAULT 'deepseek',
+    fetched_at DOUBLE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_query_key (query_key),
+    INDEX idx_fetched_at (fetched_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
 
 def init_tables(
     *,
@@ -195,6 +307,14 @@ def init_tables(
         cursor.execute(_USER_WATCHLIST_DDL)
         cursor.execute(_POSITION_OPERATIONS_DDL)
         cursor.execute(_ANALYSIS_LOGS_DDL)
+        cursor.execute(_DATA_SOURCE_CACHE_DDL)
+        # DeepSeek search cache tables
+        cursor.execute(_DEEPSEEK_SECTOR_HISTORY_DDL)
+        cursor.execute(_DEEPSEEK_INDEX_HISTORY_DDL)
+        cursor.execute(_DEEPSEEK_FUND_NAV_HISTORY_DDL)
+        cursor.execute(_DEEPSEEK_SECTOR_REALTIME_DDL)
+        cursor.execute(_DEEPSEEK_STOCK_REALTIME_DDL)
+        cursor.execute(_DEEPSEEK_MARKET_OVERVIEW_DDL)
         # Migrate analysis_logs ENUM to include 'ai_wind' for existing databases
         try:
             cursor.execute(

@@ -14,7 +14,8 @@
     "stockSector": "股票板块",
     "fundSector": "基金研判",
     "marketOverview": "市场总览",
-    "watchlistManagement": "自选管理"
+    "watchlistManagement": "自选管理",
+    "deepseekQa": "DeepSeek 问答"
   },
   "language": {
     "zh": "中",
@@ -563,6 +564,36 @@
     "lastSuccess": "最近成功",
     "noAdapters": "无数据源信息",
     "mockWarning": "当前使用模拟数据"
+  },
+  "dataSourceSelector": {
+    "primary": "主数据源",
+    "active": "当前",
+    "activeSource": "当前数据源",
+    "priority": "优先级",
+    "expand": "查看详情",
+    "collapse": "收起详情",
+    "selectSource": "选择数据源",
+    "save": "保存选择",
+    "saving": "保存中...",
+    "saveSuccess": "数据源已切换为 {{source}}",
+    "saveFailed": "保存失败",
+    "health": {
+      "healthy": "正常",
+      "degraded": "降级",
+      "down": "离线"
+    },
+    "deepseek": {
+      "usageTitle": "DeepSeek API 用量",
+      "remainingCalls": "剩余调用次数",
+      "totalCalls": "今日总调用次数",
+      "cbStatus": "熔断器状态",
+      "cbOpen": "熔断器已开启 -- DeepSeek 搜索暂时不可用",
+      "cbOpenBadge": "熔断开启",
+      "cbOpenText": "已开启",
+      "cbClosedText": "已关闭",
+      "cbWarning": "熔断器已开启。由于连续失败，DeepSeek 搜索暂时不可用。系统将在冷却期后自动重试。",
+      "fetchError": "无法获取 DeepSeek 状态"
+    }
   },
   "keyboardShortcuts": {
     "hint": "快捷键",

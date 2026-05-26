@@ -16,8 +16,9 @@ class AppConfig(BaseModel):
 
 class MarketConfig(BaseModel):
     vix_symbol: str = "^VIX"
-    allow_mock_vix: bool = True
+    allow_mock_vix: bool = False
     mock_vix_value: float = 18.5
+    enable_mock: bool = False
 
 
 class LLMConfig(BaseModel):
@@ -116,6 +117,30 @@ class DataSourceConfig(BaseModel):
     akshare: AkShareConfig = Field(default_factory=AkShareConfig)
 
 
+class HistoricalDataConfig(BaseModel):
+    """Configuration for the multi-data-source historical data layer."""
+
+    tushare_token: str = ""
+    cache_ttl_hours: float = Field(default=4.0, gt=0, le=168)
+    cache_db_path: str = "data/historical_cache.db"
+    adapter_priority: list[str] = Field(
+        default_factory=lambda: ["tushare", "baostock", "efinance", "akshare"]
+    )
+    active_source: str = "auto"
+
+
+class DeepSeekSearchConfig(BaseModel):
+    """Configuration for DeepSeek web search data source."""
+
+    enabled: bool = True
+    base_url: str = "http://model.mify.ai.srv/v1"
+    api_key: str = ""
+    model: str = "deepseek-chat"
+    timeout_seconds: int = 30
+    requests_per_minute: int = 20
+    daily_limit: int = 500
+
+
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -133,6 +158,8 @@ class Config(BaseModel):
     webhook: WebhookConfig = Field(default_factory=WebhookConfig)
     mysql: MySQLConfig = Field(default_factory=MySQLConfig)
     data_sources: DataSourceConfig = Field(default_factory=DataSourceConfig)
+    historical_data: HistoricalDataConfig = Field(default_factory=HistoricalDataConfig)
+    deepseek_search: DeepSeekSearchConfig = Field(default_factory=DeepSeekSearchConfig)
 
     @property
     def llm(self) -> LLMConfig:
@@ -159,6 +186,8 @@ def load_config(path: str | Path | None = None) -> Config:
         config.app.database_path = str(base_dir / config.app.database_path)
     if not Path(config.app.paper_log_path).is_absolute():
         config.app.paper_log_path = str(base_dir / config.app.paper_log_path)
+    if not Path(config.historical_data.cache_db_path).is_absolute():
+        config.historical_data.cache_db_path = str(base_dir / config.historical_data.cache_db_path)
     return config
 
 

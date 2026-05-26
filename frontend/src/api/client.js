@@ -588,3 +588,127 @@ export function getFundNavRealtime(codes) {
 export function getDataSourceStatus() {
   return request('/api/system/data-source-status');
 }
+
+/**
+ * 获取当前历史数据源偏好设置
+ *
+ * @async
+ * @returns {Promise<Object>} { active_source: string, available_sources: string[] }
+ */
+export function getDataSourcePreference() {
+  return request('/api/settings/data-source');
+}
+
+/**
+ * 设置历史数据源偏好
+ *
+ * @async
+ * @param {string} source - 数据源名称: "auto", "tushare", "baostock", "efinance", "akshare", "deepseek"
+ * @returns {Promise<Object>} { active_source: string, available_sources: string[] }
+ */
+export function setDataSourcePreference(source) {
+  return request('/api/settings/data-source', {
+    method: 'PUT',
+    body: JSON.stringify({ active_source: source }),
+  });
+}
+
+/**
+ * 获取 DeepSeek 搜索服务状态
+ *
+ * @async
+ * @returns {Promise<Object>} DeepSeek 服务状态，包含 remaining_calls, circuit_breaker_open, daily_limit 等
+ */
+export function getDeepSeekStatus() {
+  return request('/api/system/deepseek-status');
+}
+
+/**
+ * 向 DeepSeek 提问金融问题
+ *
+ * @async
+ * @param {string} question - 金融问题
+ * @returns {Promise<Object>} 回答结果，包含 answer, model, sources
+ */
+export function askDeepSeek(question) {
+  return request('/api/deepseek/ask', {
+    method: 'POST',
+    body: JSON.stringify({ question }),
+  });
+}
+
+/* ==========================================================================
+   历史数据 API
+   ========================================================================== */
+
+/**
+ * 获取板块历史K线数据
+ *
+ * @async
+ * @param {string} sectorName - 板块名称，如 '白酒'
+ * @param {string} [sectorType='industry'] - 板块类型: industry 或 concept
+ * @param {number} [days=60] - 历史天数
+ * @returns {Promise<Object>} 板块历史数据，包含 sector_name, data[]
+ */
+export function getSectorHistory(sectorName, sectorType = 'industry', days = 60) {
+  const params = new URLSearchParams({
+    sector_name: sectorName,
+    sector_type: sectorType,
+    days: String(days),
+  });
+  return request(`/api/stocks/sector-history?${params}`);
+}
+
+/**
+ * 获取指数历史K线数据
+ *
+ * @async
+ * @param {string} code - 指数代码，如 '000001'
+ * @param {number} [days=60] - 历史天数
+ * @returns {Promise<Object>} 指数历史数据，包含 index_code, data[]
+ */
+export function getIndexHistory(code, days = 60) {
+  const params = new URLSearchParams({ code, days: String(days) });
+  return request(`/api/stocks/index-history?${params}`);
+}
+
+/**
+ * 获取基金净值历史数据
+ *
+ * @async
+ * @param {string} code - 基金代码，如 '000510'
+ * @param {number} [days=30] - 历史天数
+ * @returns {Promise<Object>} 基金净值历史，包含 fund_code, data[]
+ */
+export function getFundNavHistory(code, days = 30) {
+  const params = new URLSearchParams({ code, days: String(days) });
+  return request(`/api/funds/nav-history?${params}`);
+}
+
+/* ==========================================================================
+   Mock 设置 API
+   ========================================================================== */
+
+/**
+ * 获取 mock 数据开关状态
+ *
+ * @async
+ * @returns {Promise<Object>} { enable_mock: boolean }
+ */
+export function getMockSettings() {
+  return request('/api/settings/mock');
+}
+
+/**
+ * 更新 mock 数据开关
+ *
+ * @async
+ * @param {boolean} enableMock - 是否启用 mock 数据
+ * @returns {Promise<Object>} { enable_mock: boolean }
+ */
+export function setMockSettings(enableMock) {
+  return request('/api/settings/mock', {
+    method: 'PUT',
+    body: JSON.stringify({ enable_mock: enableMock }),
+  });
+}

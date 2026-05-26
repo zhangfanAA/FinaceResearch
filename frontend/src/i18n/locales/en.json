@@ -14,7 +14,8 @@
     "stockSector": "Stock Sector",
     "fundSector": "Fund Analysis",
     "marketOverview": "Market Overview",
-    "watchlistManagement": "Watchlist"
+    "watchlistManagement": "Watchlist",
+    "deepseekQa": "DeepSeek Q&A"
   },
   "language": {
     "zh": "中",
@@ -563,6 +564,36 @@
     "lastSuccess": "Last Success",
     "noAdapters": "No data source info",
     "mockWarning": "Currently using mock data"
+  },
+  "dataSourceSelector": {
+    "primary": "Primary",
+    "active": "Current",
+    "activeSource": "Active Source",
+    "priority": "Priority",
+    "expand": "Show details",
+    "collapse": "Hide details",
+    "selectSource": "Select Data Source",
+    "save": "Save Selection",
+    "saving": "Saving...",
+    "saveSuccess": "Data source switched to {{source}}",
+    "saveFailed": "Save failed",
+    "health": {
+      "healthy": "Healthy",
+      "degraded": "Degraded",
+      "down": "Down"
+    },
+    "deepseek": {
+      "usageTitle": "DeepSeek API Usage",
+      "remainingCalls": "Remaining Calls",
+      "totalCalls": "Total Calls Today",
+      "cbStatus": "Circuit Breaker",
+      "cbOpen": "Circuit breaker is open -- DeepSeek search temporarily unavailable",
+      "cbOpenBadge": "CIRCUIT OPEN",
+      "cbOpenText": "Open",
+      "cbClosedText": "Closed",
+      "cbWarning": "Circuit breaker is open. DeepSeek search is temporarily unavailable due to repeated failures. It will automatically retry after a cooldown period.",
+      "fetchError": "Unable to fetch DeepSeek status"
+    }
   },
   "keyboardShortcuts": {
     "hint": "Shortcuts",

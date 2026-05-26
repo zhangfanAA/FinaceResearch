@@ -174,7 +174,7 @@ class TestFallbackChain:
         result = chain.execute("fetch_stock_realtime", ["600519"])
 
         assert result.source == "none"
-        assert result.is_mock is True
+        assert result.is_mock is False
         assert result.data is None
         assert "err1" in result.error
         assert "err2" in result.error

@@ -3,63 +3,56 @@ app:
   mode: paper
   database_path: data/finance_agent.sqlite
   paper_log_path: data/paper_executions.jsonl
-
 market:
-  vix_symbol: "^VIX"
-  allow_mock_vix: true
+  vix_symbol: ^VIX
+  allow_mock_vix: false
   mock_vix_value: 18.5
-
+  enable_mock: false
 confidence_thresholds:
   default: 0.65
-  broad_index: 0.60
-  high_volatility: 0.70
-
+  broad_index: 0.6
+  high_volatility: 0.7
 assets:
-  "000510":
+  '000510':
     name: 中证A500
     category: broad_index
     fund_class: A
-  "008282":
+  008282:
     name: 国泰半导体C
     category: high_volatility
     fund_class: C
-  "SEMICONDUCTOR_C":
+  SEMICONDUCTOR_C:
     name: 半导体C
     category: high_volatility
     fund_class: C
-
 webhook:
   enabled: false
   type: null
   url: null
   timeout_seconds: 3
-
 ollama:
   base_url: https://token-plan-cn.xiaomimimo.com
   generate_path: /v1
   model: mimo-v2.5-pro
   timeout_seconds: 60
-  api_key: ""
-
+  api_key: ''
 deepseek:
   base_url: http://model.mify.ai.srv/v1
-  generate_path: ""
+  generate_path: ''
   model: deepseek-chat
   timeout_seconds: 60
-  api_key: ""
-
+  api_key: ''
 mysql:
   host: localhost
   port: 3306
   user: root
-  password: "1234"
+  password: '1234'
   database: Finnacequant
   pool_size: 5
-
 data_sources:
   proxy:
-    http: ""
-    https: ""
+    http: ''
+    https: ''
   fallback:
     max_retries: 1
     timeout_seconds: 10
@@ -69,3 +62,22 @@ data_sources:
     sector_cache_ttl_seconds: 60
     fund_cache_ttl_seconds: 300
     request_timeout_seconds: 15
+historical_data:
+  tushare_token: f33d40e8bc3cdf03205815f0d9139bb3064a9b05fda511494e428a03
+  cache_ttl_hours: 4.0
+  cache_db_path: data/historical_cache.db
+  adapter_priority:
+  - tushare
+  - baostock
+  - efinance
+  - akshare
+  - deepseek
+  active_source: tushare
+deepseek_search:
+  enabled: true
+  base_url: https://api.deepseek.com
+  api_key: ''
+  model: deepseek-v4-flash
+  timeout_seconds: 30
+  requests_per_minute: 20
+  daily_limit: 500

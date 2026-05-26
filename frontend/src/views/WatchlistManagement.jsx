@@ -26,6 +26,7 @@ import {
 import WatchlistTable from '../components/WatchlistTable';
 import OperationModal from '../components/OperationModal';
 import WatchlistAIAnalysis from '../components/WatchlistAIAnalysis';
+import useStaleData from '../hooks/useStaleData';
 import useToast from '../hooks/useToast';
 
 /**
@@ -71,10 +72,23 @@ export default function WatchlistManagement() {
   const { t } = useTranslation();
   const { showToast } = useToast();
 
-  // Data state
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  // Data state - useStaleData pattern
+  const {
+    data: watchlistData,
+    loading,
+    refreshing,
+    error,
+    lastSuccessfulFetch: lastUpdated,
+    refresh: handleForceRefresh,
+  } = useStaleData(
+    useCallback(async () => {
+      const result = await getWatchlist('all');
+      return Array.isArray(result) ? result : [];
+    }, []),
+    { intervalMs: 60000, enabled: true, staggerMs: 20000 }
+  );
+
+  const items = watchlistData || [];
 
   // Tab state
   const [activeTab, setActiveTab] = useState('fund');
@@ -111,25 +125,10 @@ export default function WatchlistManagement() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [stepIndex, setStepIndex] = useState(0);
 
-  /**
-   * 加载自选列表
-   */
-  const loadWatchlist = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await getWatchlist('all');
-      setItems(Array.isArray(data) ? data : []);
-    } catch (err) {
-      setError(err.message || t('watchlist.empty'));
-    } finally {
-      setLoading(false);
-    }
-  }, [t]);
-
-  useEffect(() => {
-    loadWatchlist();
-  }, [loadWatchlist]);
+  /** 最后更新时间 */
+  const formattedTime = lastUpdated
+    ? new Date(lastUpdated).toLocaleTimeString()
+    : '--';
 
   /**
    * 分析步骤动画
@@ -208,7 +207,7 @@ export default function WatchlistManagement() {
       setPurchaseShares('');
       setShowPurchaseInfo(false);
       showToast(t('toast.addSuccess'), 'success');
-      await loadWatchlist();
+      handleForceRefresh();
     } catch (err) {
       if (err.status === 409 || /already exists|duplicate/i.test(err.message)) {
         showToast(t('toast.duplicate'), 'warning');
@@ -226,13 +225,13 @@ export default function WatchlistManagement() {
   async function handleRemove(id) {
     try {
       await removeFromWatchlist(id);
-      setItems((prev) => prev.filter((item) => item.id !== id));
       showToast(t('toast.removeSuccess'), 'success');
       // Clear analysis if the removed item was selected
       if (selectedItem?.id === id) {
         setAnalysis(null);
         setSelectedItem(null);
       }
+      handleForceRefresh();
     } catch {
       // silent
     }
@@ -265,7 +264,7 @@ export default function WatchlistManagement() {
         'success'
       );
       setModalVisible(false);
-      await loadWatchlist();
+      handleForceRefresh();
     } catch (err) {
       showToast(err.message || t('watchlistManagement.operations.operationFailed'), 'error');
     } finally {
@@ -346,7 +345,7 @@ export default function WatchlistManagement() {
     setParsedItems([]);
     setImagePreview(null);
     setShowImageUpload(false);
-    await loadWatchlist();
+    handleForceRefresh();
   }
 
   function handleKeyDown(e) {
@@ -379,11 +378,42 @@ export default function WatchlistManagement() {
           <p>{t('watchlistManagement.subtitle')}</p>
         </div>
         <div className="section-header__actions">
-          <button type="button" className="button button--secondary" onClick={loadWatchlist}>
-            {t('fundSector.refreshHoldings')}
+          <span className="section-header__time">
+            {t('aiWind.lastUpdate')}: {formattedTime}
+          </span>
+          <button
+            type="button"
+            className="button button--secondary"
+            onClick={handleForceRefresh}
+            disabled={refreshing}
+          >
+            {refreshing ? t('aiWind.refreshing') : t('fundSector.refreshHoldings')}
           </button>
         </div>
       </div>
+
+      {/* Error banner when stale data exists */}
+      {error && items.length > 0 && (
+        <div className="inline-alert inline-alert--warning">{error}</div>
+      )}
+
+      {/* First-load error state */}
+      {error && items.length === 0 && !loading && (
+        <div className="subpanel">
+          <div className="inline-alert inline-alert--error">
+            {error}
+            <button
+              type="button"
+              className="button button--sm button--secondary"
+              onClick={handleForceRefresh}
+              disabled={refreshing}
+              style={{ marginLeft: '12px' }}
+            >
+              {refreshing ? t('aiWind.refreshing') : t('aiWind.refresh')}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Sub-tabs */}
       <div className="watchlist-management__tabs">

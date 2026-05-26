@@ -104,6 +104,7 @@ class StockQuoteResponse(BaseModel):
     change_pct: float
     change_amount: float | None = None
     data_source: str = "unknown"
+    stale: bool = False
 
 
 class SectorQuoteResponse(BaseModel):
@@ -116,6 +117,7 @@ class SectorQuoteResponse(BaseModel):
     rise_count: int
     fall_count: int
     data_source: str = "unknown"
+    stale: bool = False
 
 
 class StockAnalysisRequest(BaseModel):
@@ -147,6 +149,7 @@ class FundNavResponse(BaseModel):
     nav_date: str
     daily_return: float
     data_source: str = "unknown"
+    stale: bool = False
 
 
 class FundAnalysisRequest(BaseModel):
@@ -177,6 +180,8 @@ class MarketOverviewResponse(BaseModel):
     top_sectors: list[SectorQuoteResponse]
     bottom_sectors: list[SectorQuoteResponse]
     fetched_at: str
+    stale: bool = False
+    cached_at: str | None = None
 
 
 # ---- Analysis History Models ----
@@ -339,3 +344,48 @@ class AIWindResponse(BaseModel):
     summary: str
     generated_at: str
     cached: bool
+
+
+# ---- Historical Data Models ----
+
+
+class HistoryPoint(BaseModel):
+    date: str
+    open: float = 0.0
+    close: float = 0.0
+    high: float = 0.0
+    low: float = 0.0
+    volume: float = 0.0
+    change_pct: float = 0.0
+
+
+class SectorHistoryResponse(BaseModel):
+    sector_name: str
+    sector_type: str
+    data: list[HistoryPoint]
+    fetched_at: str
+    stale: bool = False
+    cached_at: str | None = None
+
+
+class IndexHistoryResponse(BaseModel):
+    index_code: str
+    data: list[HistoryPoint]
+    fetched_at: str
+    stale: bool = False
+    cached_at: str | None = None
+
+
+class FundNavHistoryPoint(BaseModel):
+    date: str
+    nav: float = 0.0
+    acc_nav: float = 0.0
+    daily_return: float = 0.0
+
+
+class FundNavHistoryResponse(BaseModel):
+    fund_code: str
+    data: list[FundNavHistoryPoint]
+    fetched_at: str
+    stale: bool = False
+    cached_at: str | None = None

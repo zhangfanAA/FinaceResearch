@@ -18,10 +18,4 @@ def get_market_snapshot(config: Config) -> MarketSnapshot:
         vix = fetch_vix_yfinance(config.market.vix_symbol)
         return MarketSnapshot(as_of=datetime.now(timezone.utc), vix=vix, source="yfinance")
     except Exception:
-        if config.market.allow_mock_vix:
-            return MarketSnapshot(
-                as_of=datetime.now(timezone.utc),
-                vix=config.market.mock_vix_value,
-                source="mock",
-            )
         return MarketSnapshot(as_of=datetime.now(timezone.utc), vix=None, source="unavailable")

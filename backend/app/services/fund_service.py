@@ -22,14 +22,14 @@ import pandas as pd
 from app.services.data_sources.akshare_adapter import AkShareAdapter
 from app.services.data_sources.eastmoney_adapter import EastMoneyAdapter
 from app.services.data_sources.fallback_chain import FallbackChain
-from app.services.data_sources.mock_adapter import MockAdapter
 
 logger = logging.getLogger(__name__)
 
 CACHE_TTL_SECONDS = 300
 
 # Canonical fallback chain for fund NAV fetching
-fallback_chain = FallbackChain([AkShareAdapter(), EastMoneyAdapter(), MockAdapter()])
+# Mock removed -- failures surface as errors instead of fake data
+fallback_chain = FallbackChain([AkShareAdapter(), EastMoneyAdapter()])
 
 
 @dataclass(slots=True)
@@ -134,8 +134,38 @@ def fetch_fund_nav_batch(fund_codes: list[str]) -> list[FundNav]:
     return navs
 
 
+def _get_historical_service():
+    """Lazy-initialize the historical data service singleton."""
+    global _historical_data_service
+    if _historical_data_service is None:
+        from app.services.historical_data_service import create_historical_data_service
+        from app.config import load_config
+        try:
+            config = load_config()
+            # Try to get the DeepSeek search service singleton from main
+            ds_service = None
+            try:
+                from app.main import get_deepseek_search_service
+                ds_service = get_deepseek_search_service()
+            except Exception:
+                pass
+            _historical_data_service = create_historical_data_service(
+                config, deepseek_search_service=ds_service,
+            )
+        except Exception as exc:
+            logger.warning("Failed to initialize historical data service: %s", exc)
+    return _historical_data_service
+
+
+_historical_data_service = None
+
+
 def fetch_fund_nav_history(fund_code: str, days: int = 30) -> list[dict[str, Any]]:
     """Fetch historical NAV for trend analysis.
+
+    Uses the multi-data-source historical data service with fallback chain
+    (Tushare -> Baostock -> efinance -> AkShare) and SQLite caching.
+    Falls back to direct AkShare call if the service is unavailable.
 
     Args:
         fund_code: e.g. "000510"
@@ -149,6 +179,12 @@ def fetch_fund_nav_history(fund_code: str, days: int = 30) -> list[dict[str, Any
     if not fund_code:
         raise ValueError("fund_code must not be empty")
 
+    service = _get_historical_service()
+    if service is not None:
+        return service.get_fund_nav_history(fund_code, days)
+
+    # Fallback: direct AkShare call (legacy path)
+    logger.warning("Historical data service unavailable, falling back to direct AkShare call")
     try:
         df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="单位净值走势")
     except Exception as exc:
