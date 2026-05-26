@@ -1,0 +1,525 @@
+{
+  "app": {
+    "eyebrow": "Micro Quant Pipeline",
+    "title": "前端控制台",
+    "description": "一个简洁的 React 面板，用于查看管道状态、LLM 设置、手动触发运行、持仓和执行日志。",
+    "backendBaseUrl": "后端地址"
+  },
+  "banner": {
+    "title": "仅限模拟 / 纸上交易",
+    "description": "此客户端仅用于模拟模式观察和手动干跑触发。此处不提供实盘交易、认证或券商执行功能。"
+  },
+  "nav": {
+    "dashboard": "概览面板",
+    "stockSector": "股票板块",
+    "fundSector": "基金研判",
+    "marketOverview": "市场总览"
+  },
+  "language": {
+    "zh": "中",
+    "en": "EN"
+  },
+  "dashboard": {
+    "status": {
+      "title": "系统状态",
+      "description": "仅限模拟管道的后端和运行时可见性。",
+      "refresh": "刷新全部",
+      "noDetail": "暂无详细信息。"
+    },
+    "statusCards": {
+      "backend": "后端",
+      "database": "数据库",
+      "langgraph": "LangGraph",
+      "chromadb": "ChromaDB",
+      "ollama": "LLM 运行时"
+    },
+    "lastRun": {
+      "title": "上次运行摘要",
+      "runId": "运行 ID",
+      "status": "状态",
+      "asset": "资产",
+      "route": "路由",
+      "finalAction": "最终操作",
+      "empty": "后端尚未记录任何运行。"
+    },
+    "settings": {
+      "title": "设置",
+      "description": "管理 LLM 请求设置。已保存的 API 密钥在界面中保持掩码状态，永远不会重新显示。",
+      "baseUrl": "LLM 基础地址",
+      "generatePath": "生成路径",
+      "model": "模型",
+      "timeoutSeconds": "超时时间(秒)",
+      "apiKey": "API 密钥",
+      "apiKeyMasked": "已存储的 API 密钥已掩码。输入新密钥将替换旧密钥。",
+      "apiKeyPlaceholder": "输入 API 密钥",
+      "apiKeyStored": "密钥已存储在后端。出于安全原因，不会再次显示。",
+      "apiKeyNotStored": "当前未存储 API 密钥。",
+      "persistKey": "在后端持久化 API 密钥",
+      "hasApiKey": "has_api_key",
+      "save": "保存设置",
+      "saving": "保存中...",
+      "test": "测试 LLM 设置",
+      "testing": "测试中...",
+      "saved": "设置已保存。API 密钥保持掩码状态。"
+    },
+    "trigger": {
+      "title": "触发运行",
+      "description": "手动触发一次仅限模拟的管道运行。留空资产代码则让后端选择默认流程。",
+      "assetCode": "资产代码",
+      "assetCodePlaceholder": "可选资产代码，如 008282",
+      "trigger": "触发运行",
+      "triggering": "触发中...",
+      "success": "运行已成功排队。运行 ID: {{runId}}"
+    },
+    "lots": {
+      "title": "持仓",
+      "description": "后端返回的模拟持仓。",
+      "refresh": "刷新持仓",
+      "empty": "未找到持仓。",
+      "loading": "加载持仓中...",
+      "id": "ID",
+      "asset": "资产",
+      "buyDate": "买入日期",
+      "shares": "份额",
+      "costPrice": "成本价",
+      "holdingDays": "持有天数",
+      "status": "状态"
+    },
+    "logs": {
+      "title": "日志",
+      "description": "后端最近的模拟执行日志。",
+      "refresh": "刷新日志",
+      "empty": "未找到执行日志。",
+      "loading": "加载日志中...",
+      "rawSignal": "原始信号",
+      "guardResult": "防护结果"
+    }
+  },
+  "stockSector": {
+    "title": "股票板块分析",
+    "subtitle": "实时板块行情排名 + AI 深度研判",
+    "refresh": "刷新板块",
+    "refreshing": "刷新中...",
+    "industry": "行业板块",
+    "concept": "概念板块",
+    "viewHistory": "查看历史",
+    "backToList": "返回板块",
+    "table": {
+      "sectorName": "板块名称",
+      "changePct": "涨跌幅",
+      "turnoverRate": "换手率",
+      "leadingStock": "领涨股",
+      "riseFall": "涨/跌家数",
+      "action": "操作",
+      "analyze": "分析",
+      "empty": "暂无板块数据"
+    },
+    "analysis": {
+      "title": "AI 板块研判",
+      "inputLabel": "或输入股票代码进行分析",
+      "inputPlaceholder": "输入股票代码，如 600519",
+      "analyze": "分析",
+      "analyzing": "分析中...",
+      "empty": "请从上方板块列表选择一个板块，或输入股票代码开始 AI 分析"
+    },
+    "steps": ["获取板块数据", "计算技术指标", "AI 深度分析"],
+    "loadingMessage": "正在调用 AI 模型进行板块深度分析...",
+    "result": {
+      "title": "AI 板块分析",
+      "sentiment": "情绪指标",
+      "reasoning": "分析逻辑",
+      "noReasoning": "暂无分析",
+      "keyFactors": "关键因素",
+      "riskWarnings": "风险提示",
+      "technicalSummary": "技术指标摘要"
+    },
+    "trend": {
+      "bullish": "看涨",
+      "bearish": "看跌",
+      "neutral": "中性"
+    },
+    "momentum": {
+      "strong": "强势",
+      "weak": "弱势",
+      "sideways": "震荡"
+    },
+    "busy": "云端大模型节点繁忙，请稍后重试",
+    "quickLookup": {
+      "title": "快速查询",
+      "placeholder": "输入股票代码 (如 600519)",
+      "search": "查询",
+      "searching": "查询中..."
+    },
+    "sectorDetail": {
+      "title": "板块详情",
+      "topStocks": "成分股",
+      "analyzeSector": "分析该板块",
+      "noStocks": "暂无成分股数据"
+    },
+    "stockCard": {
+      "price": "现价",
+      "change": "涨跌幅",
+      "volume": "成交量",
+      "high": "最高",
+      "low": "最低",
+      "open": "开盘",
+      "prevClose": "昨收"
+    }
+  },
+  "fundSector": {
+    "title": "基金研判",
+    "subtitle": "基金净值查询 + AI 综合深度研判",
+    "refreshHoldings": "刷新持仓",
+    "viewHistory": "查看历史",
+    "backToAnalysis": "返回研判",
+    "sidebar": {
+      "holdings": "持仓概览",
+      "noHoldings": "当前没有持仓数据。",
+      "holdingDays": "天",
+      "shares": "持有份额",
+      "pnlRatio": "盈亏比例",
+      "status": "状态",
+      "aiAnalysis": "AI 深度研判",
+      "aiAnalyzing": "分析中..."
+    },
+    "fundCode": {
+      "title": "基金代码查询",
+      "placeholder": "输入基金代码，如 000510",
+      "label": "基金代码",
+      "queryNav": "查询净值",
+      "querying": "查询中...",
+      "aiJudgment": "AI 研判",
+      "analyzing": "分析中..."
+    },
+    "navTable": {
+      "title": "净值数据",
+      "fundCode": "基金代码",
+      "fundName": "基金名称",
+      "nav": "最新净值",
+      "dailyReturn": "日涨跌",
+      "accNav": "累计净值",
+      "navDate": "净值日期",
+      "empty": "暂无基金净值数据"
+    },
+    "prompt": {
+      "title": "分析指令（可选）",
+      "label": "自定义 Prompt",
+      "placeholder": "留空则使用默认基金研判 Prompt"
+    },
+    "steps": ["获取基金净值", "检索新闻资讯", "AI 综合研判"],
+    "loadingMessage": "正在调用 AI 模型进行基金深度研判...",
+    "empty": "等待分析",
+    "emptyHint": "从左侧选择持仓基金或输入基金代码，点击「AI 深度研判」开始分析",
+    "emptyWithCode": "当前基金代码：{{code}}，点击左侧「AI 深度研判」按钮开始分析",
+    "result": {
+      "title": "AI 基金研判",
+      "sentiment": "情绪指标",
+      "reasoning": "分析逻辑",
+      "noReasoning": "暂无分析",
+      "navTrend": "净值趋势",
+      "newsHighlights": "新闻要点",
+      "riskFactors": "风险因素",
+      "feeWarning": "7天内赎回费风险",
+      "feeWarningDetail": "该基金持有不足7天，赎回将产生手续费。建议持有超过7天后再操作。",
+      "suggestion": "操作建议",
+      "noSuggestion": "暂无建议"
+    },
+    "judgment": {
+      "positive": "积极",
+      "negative": "消极",
+      "neutral": "中性"
+    },
+    "suggestion": {
+      "hold": "持有",
+      "watch": "观望",
+      "caution": "谨慎"
+    },
+    "navTrend": {
+      "rising": "上升",
+      "falling": "下降",
+      "stable": "稳定"
+    },
+    "busy": "云端大模型节点繁忙，请稍后重试"
+  },
+  "marketOverview": {
+    "title": "市场总览",
+    "subtitle": "VIX + 主要指数 + 板块涨跌排行",
+    "refresh": "刷新数据",
+    "refreshing": "刷新中...",
+    "marketSummary": {
+      "title": "市场概况",
+      "risingSectors": "上涨板块",
+      "fallingSectors": "下跌板块",
+      "avgChange": "平均涨跌幅",
+      "marketStatus": "市场状态",
+      "open": "开盘",
+      "closed": "收盘",
+      "holiday": "休市",
+      "lastUpdate": "更新时间"
+    },
+    "vix": {
+      "label": "VIX 恐慌指数",
+      "title": "恐慌指数 (VIX)",
+      "low": "低波动",
+      "normal": "正常区间",
+      "medium": "中等波动",
+      "high": "高波动",
+      "extreme": "极度恐慌"
+    },
+    "indices": {
+      "volume": "成交量",
+      "amount": "成交额"
+    },
+    "sectors": {
+      "leadingStock": "领涨股",
+      "viewAll": "查看全部"
+    },
+    "topSectors": "涨幅前5板块",
+    "bottomSectors": "跌幅前5板块",
+    "timestamp": "数据更新时间: {{time}}",
+    "empty": "暂无市场数据",
+    "indexNames": {
+      "000001": "上证指数",
+      "399001": "深证成指",
+      "000300": "沪深300",
+      "000905": "中证500"
+    }
+  },
+  "research": {
+    "title": "投研大厅",
+    "subtitle": "只读联网投研，不触发任何执行链路。",
+    "refreshHoldings": "刷新持仓",
+    "sidebar": {
+      "holdings": "持仓概览区",
+      "loading": "加载持仓中...",
+      "noHoldings": "当前没有持仓数据。",
+      "holdingDays": "天",
+      "shares": "持有份额",
+      "pnlRatio": "盈亏比例",
+      "status": "状态",
+      "deepAnalysis": "深度联网分析",
+      "analyzing": "分析中..."
+    },
+    "prompt": {
+      "title": "分析指令",
+      "label": "自定义 Prompt（可选）",
+      "placeholder": "留空则使用默认基金板块联网投研 Prompt"
+    },
+    "steps": ["检索资讯", "提取情绪", "生成研报"],
+    "loadingMessage": "正在检索全网最新资讯与宏观政策...",
+    "empty": "请选择左侧基金进行深度投研",
+    "result": {
+      "sentiment": "情绪温度",
+      "reasoning": "推理逻辑",
+      "suggestion": "操作建议",
+      "structured": "结构化结果",
+      "feeWarning": "7天内赎回费风险"
+    },
+    "busy": "云端大模型节点繁忙，请稍后重试"
+  },
+  "watchlist": {
+    "title": "自选管理",
+    "stockSection": "自选股票",
+    "fundSection": "自选基金",
+    "addStock": "添加股票",
+    "addFund": "添加基金",
+    "inputPlaceholder": "输入股票/基金代码",
+    "add": "添加",
+    "adding": "添加中...",
+    "remove": "移除",
+    "analyze": "分析",
+    "empty": "暂无自选项目",
+    "imageUpload": {
+      "title": "图片识别添加",
+      "uploadButton": "上传持仓截图",
+      "uploading": "识别中...",
+      "preview": "图片预览",
+      "parsedItems": "识别结果",
+      "confirmAdd": "确认添加",
+      "cancel": "取消",
+      "noItems": "未识别到有效代码",
+      "dragHint": "点击或拖拽上传持仓截图"
+    },
+    "code": "代码",
+    "name": "名称",
+    "type": "类型",
+    "stock": "股票",
+    "fund": "基金",
+    "duplicate": "该项目已在自选列表中",
+    "addFailed": "添加失败",
+    "purchaseInfo": {
+      "title": "买入信息（选填）",
+      "amount": "买入金额（元）",
+      "nav": "买入净值",
+      "date": "买入日期",
+      "shares": "持有份额",
+      "expand": "填写买入信息",
+      "collapse": "收起买入信息"
+    },
+    "fundHoldings": {
+      "title": "基金持仓",
+      "code": "基金代码",
+      "name": "基金名称",
+      "purchaseNav": "买入净值",
+      "currentNav": "当前净值",
+      "navDate": "净值日期",
+      "dailyReturn": "日涨跌幅",
+      "shares": "持有份额",
+      "amount": "买入金额",
+      "totalPnl": "总盈亏",
+      "totalPnlPct": "收益率",
+      "noHoldings": "暂无基金持仓数据",
+      "refresh": "刷新持仓",
+      "aiAnalysis": "AI 分析",
+      "analyzing": "分析中..."
+    }
+  },
+  "components": {
+    "autoRefresh": {
+      "on": "自动刷新: 开",
+      "off": "自动刷新: 关",
+      "paused": "已暂停",
+      "pausedTitle": "AI 分析进行中，自动刷新已暂停",
+      "onTitle": "关闭自动刷新",
+      "offTitle": "开启自动刷新"
+    },
+    "dataFreshness": {
+      "fresh": "数据新鲜",
+      "stale": "数据较旧",
+      "old": "数据过期"
+    },
+    "errorRetry": {
+      "defaultError": "数据加载失败",
+      "retrying": "重试中...",
+      "retry": "重试"
+    },
+    "search": {
+      "placeholder": "输入搜索...",
+      "clear": "清除",
+      "recentSearches": "最近搜索",
+      "searching": "搜索中...",
+      "noResults": "无匹配结果"
+    },
+    "technicalChart": {
+      "title": "技术指标",
+      "noData": "暂无技术数据",
+      "movingAverages": "均线系统",
+      "macd": "MACD",
+      "signal": "信号线",
+      "histogram": "柱状图",
+      "kdj": "KDJ",
+      "bollinger": "布林带",
+      "upper": "上轨",
+      "middle": "中轨",
+      "lower": "下轨",
+      "rsiOversold": "超卖",
+      "rsiNeutral": "中性",
+      "rsiOverbought": "超买"
+    }
+  },
+  "globalSearch": {
+    "placeholder": "搜索股票、基金代码或名称...",
+    "noResults": "无匹配结果",
+    "hint": "输入代码直接分析",
+    "recentSearches": "最近搜索",
+    "watchlist": "自选列表",
+    "search": "搜索",
+    "close": "关闭"
+  },
+  "export": {
+    "json": "导出 JSON",
+    "markdown": "导出 Markdown",
+    "exporting": "导出中..."
+  },
+  "comparison": {
+    "title": "分析对比",
+    "close": "关闭",
+    "noItems": "请选择至少2个项目进行对比",
+    "field": "字段",
+    "target": "标的",
+    "trend": "趋势",
+    "judgment": "判断",
+    "sentiment": "情绪分数",
+    "confidence": "置信度",
+    "reasoning": "分析逻辑",
+    "keyFactors": "关键因素",
+    "riskWarnings": "风险提示",
+    "suggestion": "操作建议",
+    "compare": "对比选中",
+    "selected": "已选 {{count}} 项",
+    "maxItems": "最多对比3个项目"
+  },
+  "analysisHistory": {
+    "title": "分析历史",
+    "filterAll": "全部",
+    "filterStock": "股票",
+    "filterFund": "基金",
+    "empty": "暂无分析历史记录",
+    "emptyDescription": "开始分析以查看历史记录",
+    "noSummary": "暂无摘要",
+    "result": "分析结果",
+    "sentimentScore": "情绪分数",
+    "reasoning": "分析逻辑",
+    "suggestion": "操作建议",
+    "keyFactors": "关键因素",
+    "riskWarnings": "风险提示",
+    "selectForCompare": "选择对比",
+    "compareSelected": "对比选中",
+    "selectedCount": "已选 {{count}} 项",
+    "searchPlaceholder": "搜索标的名称或代码...",
+    "dateFilter": {
+      "all": "全部",
+      "today": "今天",
+      "week": "近7天",
+      "month": "近30天"
+    },
+    "resultCount": "共 {{count}} 条记录"
+  },
+  "errorBoundary": {
+    "title": "页面出错了",
+    "description": "抱歉，页面遇到了一个错误。",
+    "reload": "重新加载",
+    "goHome": "返回首页",
+    "showDetails": "显示详情",
+    "hideDetails": "隐藏详情"
+  },
+  "common": {
+    "loading": "加载中",
+    "error": "错误",
+    "empty": "暂无数据",
+    "unknown": "未知"
+  },
+  "toast": {
+    "close": "关闭",
+    "addSuccess": "已添加到自选",
+    "addFailed": "添加失败",
+    "duplicate": "该项目已在自选列表中",
+    "exportSuccess": "导出成功",
+    "analysisFailed": "分析失败",
+    "apiKeyRequired": "请先在设置页面配置 LLM API Key"
+  },
+  "dataSource": {
+    "title": "数据源状态",
+    "adapter": "适配器",
+    "status": "状态",
+    "healthy": "正常",
+    "failing": "异常",
+    "successCount": "成功次数",
+    "failureCount": "失败次数",
+    "avgLatency": "平均延迟",
+    "lastError": "最近错误",
+    "lastSuccess": "最近成功",
+    "noAdapters": "无数据源信息",
+    "mockWarning": "当前使用模拟数据"
+  },
+  "keyboardShortcuts": {
+    "hint": "快捷键",
+    "refresh": "刷新数据",
+    "search": "全局搜索"
+  },
+  "theme": {
+    "dark": "深色模式",
+    "light": "浅色模式",
+    "toggle": "切换主题"
+  }
+}

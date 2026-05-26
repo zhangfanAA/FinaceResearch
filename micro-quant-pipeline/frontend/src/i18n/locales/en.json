@@ -1,0 +1,525 @@
+{
+  "app": {
+    "eyebrow": "Micro Quant Pipeline",
+    "title": "Frontend Console",
+    "description": "A React dashboard for pipeline status, LLM settings, manual trigger runs, lots, and execution logs.",
+    "backendBaseUrl": "Backend URL"
+  },
+  "banner": {
+    "title": "PAPER / DRY-RUN ONLY",
+    "description": "This client is for paper-mode observation and manual dry-run triggering only. No live trading, auth, or brokerage execution is exposed here."
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "stockSector": "Stock Sector",
+    "fundSector": "Fund Analysis",
+    "marketOverview": "Market Overview"
+  },
+  "language": {
+    "zh": "中",
+    "en": "EN"
+  },
+  "dashboard": {
+    "status": {
+      "title": "System Status",
+      "description": "Backend and runtime visibility for the paper-only pipeline.",
+      "refresh": "Refresh All",
+      "noDetail": "No detail provided."
+    },
+    "statusCards": {
+      "backend": "Backend",
+      "database": "Database",
+      "langgraph": "LangGraph",
+      "chromadb": "ChromaDB",
+      "ollama": "LLM Runtime"
+    },
+    "lastRun": {
+      "title": "Last Run Summary",
+      "runId": "Run ID",
+      "status": "Status",
+      "asset": "Asset",
+      "route": "Route",
+      "finalAction": "Final Action",
+      "empty": "No run has been recorded by the backend yet."
+    },
+    "settings": {
+      "title": "Settings",
+      "description": "Manage LLM request settings. Saved API keys stay masked in the UI and are never re-displayed.",
+      "baseUrl": "LLM Base URL",
+      "generatePath": "Generate Path",
+      "model": "Model",
+      "timeoutSeconds": "Timeout (seconds)",
+      "apiKey": "API Key",
+      "apiKeyMasked": "Stored key is masked. Enter a new key to replace it.",
+      "apiKeyPlaceholder": "Enter API key",
+      "apiKeyStored": "A key is already stored on the backend. It is intentionally never shown again.",
+      "apiKeyNotStored": "No API key is currently stored.",
+      "persistKey": "Persist API key on backend",
+      "hasApiKey": "has_api_key",
+      "save": "Save Settings",
+      "saving": "Saving...",
+      "test": "Test LLM Settings",
+      "testing": "Testing...",
+      "saved": "Settings saved. API key remains masked."
+    },
+    "trigger": {
+      "title": "Trigger Run",
+      "description": "Manually trigger one paper-only pipeline run. Leave asset code blank to let the backend choose its default flow.",
+      "assetCode": "Asset Code",
+      "assetCodePlaceholder": "Optional asset code, e.g. 008282",
+      "trigger": "Trigger Run",
+      "triggering": "Triggering...",
+      "success": "Run queued successfully. Run ID: {{runId}}"
+    },
+    "lots": {
+      "title": "Lots",
+      "description": "Open paper lots returned by the backend.",
+      "refresh": "Refresh Lots",
+      "empty": "No open lots found.",
+      "loading": "Loading lots...",
+      "id": "ID",
+      "asset": "Asset",
+      "buyDate": "Buy Date",
+      "shares": "Shares",
+      "costPrice": "Cost Price",
+      "holdingDays": "Holding Days",
+      "status": "Status"
+    },
+    "logs": {
+      "title": "Logs",
+      "description": "Recent paper execution logs from the backend.",
+      "refresh": "Refresh Logs",
+      "empty": "No execution logs found.",
+      "loading": "Loading logs...",
+      "rawSignal": "Raw Signal",
+      "guardResult": "Guard Result"
+    }
+  },
+  "stockSector": {
+    "title": "Stock Sector Analysis",
+    "subtitle": "Real-time sector rankings + AI deep analysis",
+    "refresh": "Refresh Sectors",
+    "refreshing": "Refreshing...",
+    "industry": "Industry",
+    "concept": "Concept",
+    "viewHistory": "View History",
+    "backToList": "Back to Sectors",
+    "table": {
+      "sectorName": "Sector Name",
+      "changePct": "Change %",
+      "turnoverRate": "Turnover",
+      "leadingStock": "Leading Stock",
+      "riseFall": "Rise/Fall",
+      "action": "Action",
+      "analyze": "Analyze",
+      "empty": "No sector data available"
+    },
+    "analysis": {
+      "title": "AI Sector Analysis",
+      "inputLabel": "Or enter stock code for analysis",
+      "inputPlaceholder": "Enter stock code, e.g. 600519",
+      "analyze": "Analyze",
+      "analyzing": "Analyzing...",
+      "empty": "Select a sector above or enter a stock code to start AI analysis"
+    },
+    "steps": ["Fetching sector data", "Calculating indicators", "AI deep analysis"],
+    "loadingMessage": "Calling AI model for sector deep analysis...",
+    "result": {
+      "title": "AI Sector Analysis",
+      "sentiment": "Sentiment",
+      "reasoning": "Analysis Logic",
+      "noReasoning": "No analysis available",
+      "keyFactors": "Key Factors",
+      "riskWarnings": "Risk Warnings",
+      "technicalSummary": "Technical Summary"
+    },
+    "trend": {
+      "bullish": "Bullish",
+      "bearish": "Bearish",
+      "neutral": "Neutral"
+    },
+    "momentum": {
+      "strong": "Strong",
+      "weak": "Weak",
+      "sideways": "Sideways"
+    },
+    "busy": "Cloud LLM busy, please retry later",
+    "quickLookup": {
+      "title": "Quick Lookup",
+      "placeholder": "Enter stock code (e.g. 600519)",
+      "search": "Search",
+      "searching": "Searching..."
+    },
+    "sectorDetail": {
+      "title": "Sector Detail",
+      "topStocks": "Top Stocks",
+      "analyzeSector": "Analyze This Sector",
+      "noStocks": "No constituent stock data"
+    },
+    "stockCard": {
+      "price": "Price",
+      "change": "Change %",
+      "volume": "Volume",
+      "high": "High",
+      "low": "Low",
+      "open": "Open",
+      "prevClose": "Prev Close"
+    }
+  },
+  "fundSector": {
+    "title": "Fund Analysis",
+    "subtitle": "Fund NAV query + AI comprehensive analysis",
+    "refreshHoldings": "Refresh Holdings",
+    "viewHistory": "View History",
+    "backToAnalysis": "Back to Analysis",
+    "sidebar": {
+      "holdings": "Holdings",
+      "noHoldings": "No holdings data.",
+      "holdingDays": "days",
+      "shares": "Shares",
+      "pnlRatio": "P&L Ratio",
+      "status": "Status",
+      "aiAnalysis": "AI Deep Analysis",
+      "aiAnalyzing": "Analyzing..."
+    },
+    "fundCode": {
+      "title": "Fund Code Query",
+      "placeholder": "Enter fund code, e.g. 000510",
+      "label": "Fund Code",
+      "queryNav": "Query NAV",
+      "querying": "Querying...",
+      "aiJudgment": "AI Judgment",
+      "analyzing": "Analyzing..."
+    },
+    "navTable": {
+      "title": "NAV Data",
+      "fundCode": "Fund Code",
+      "fundName": "Fund Name",
+      "nav": "Latest NAV",
+      "dailyReturn": "Daily Return",
+      "accNav": "Acc NAV",
+      "navDate": "NAV Date",
+      "empty": "No fund NAV data"
+    },
+    "prompt": {
+      "title": "Analysis Prompt (Optional)",
+      "label": "Custom Prompt",
+      "placeholder": "Leave empty to use default fund analysis prompt"
+    },
+    "steps": ["Fetching fund NAV", "Retrieving news", "AI comprehensive judgment"],
+    "loadingMessage": "Calling AI model for fund deep analysis...",
+    "empty": "Waiting for analysis",
+    "emptyHint": "Select a holding from the left or enter a fund code, then click 'AI Deep Analysis' to start",
+    "emptyWithCode": "Current fund code: {{code}}, click 'AI Deep Analysis' on the left to start",
+    "result": {
+      "title": "AI Fund Analysis",
+      "sentiment": "Sentiment",
+      "reasoning": "Analysis Logic",
+      "noReasoning": "No analysis available",
+      "navTrend": "NAV Trend",
+      "newsHighlights": "News Highlights",
+      "riskFactors": "Risk Factors",
+      "feeWarning": "7-day Redemption Fee Risk",
+      "feeWarningDetail": "Held less than 7 days. Redemption will incur fees. Consider holding longer.",
+      "suggestion": "Operation Suggestion",
+      "noSuggestion": "No suggestion"
+    },
+    "judgment": {
+      "positive": "Positive",
+      "negative": "Negative",
+      "neutral": "Neutral"
+    },
+    "suggestion": {
+      "hold": "Hold",
+      "watch": "Watch",
+      "caution": "Caution"
+    },
+    "navTrend": {
+      "rising": "Rising",
+      "falling": "Falling",
+      "stable": "Stable"
+    },
+    "busy": "Cloud LLM busy, please retry later"
+  },
+  "marketOverview": {
+    "title": "Market Overview",
+    "subtitle": "VIX + Major Indices + Sector Rankings",
+    "refresh": "Refresh Data",
+    "refreshing": "Refreshing...",
+    "marketSummary": {
+      "title": "Market Summary",
+      "risingSectors": "Rising Sectors",
+      "fallingSectors": "Falling Sectors",
+      "avgChange": "Avg Change",
+      "marketStatus": "Market Status",
+      "open": "Open",
+      "closed": "Closed",
+      "holiday": "Holiday",
+      "lastUpdate": "Last Update"
+    },
+    "vix": {
+      "label": "VIX Fear Index",
+      "title": "Fear Index (VIX)",
+      "low": "Low Volatility",
+      "normal": "Normal Range",
+      "medium": "Medium Volatility",
+      "high": "High Volatility",
+      "extreme": "Extreme Fear"
+    },
+    "indices": {
+      "volume": "Volume",
+      "amount": "Turnover"
+    },
+    "sectors": {
+      "leadingStock": "Leading Stock",
+      "viewAll": "View All"
+    },
+    "topSectors": "Top 5 Gainers",
+    "bottomSectors": "Top 5 Losers",
+    "timestamp": "Last updated: {{time}}",
+    "empty": "No market data",
+    "indexNames": {
+      "000001": "Shanghai Composite",
+      "399001": "Shenzhen Component",
+      "000300": "CSI 300",
+      "000905": "CSI 500"
+    }
+  },
+  "research": {
+    "title": "Research Hall",
+    "subtitle": "Read-only online research. No execution pipeline triggered.",
+    "refreshHoldings": "Refresh Holdings",
+    "sidebar": {
+      "holdings": "Holdings",
+      "loading": "Loading holdings...",
+      "noHoldings": "No holdings data.",
+      "holdingDays": "days",
+      "shares": "Shares",
+      "pnlRatio": "P&L Ratio",
+      "status": "Status",
+      "deepAnalysis": "Deep Online Analysis",
+      "analyzing": "Analyzing..."
+    },
+    "prompt": {
+      "title": "Analysis Prompt",
+      "label": "Custom Prompt (Optional)",
+      "placeholder": "Leave empty to use default research prompt"
+    },
+    "steps": ["Retrieving info", "Extracting sentiment", "Generating report"],
+    "loadingMessage": "Retrieving latest news and macro policies...",
+    "empty": "Select a fund from the left for deep research",
+    "result": {
+      "sentiment": "Sentiment",
+      "reasoning": "Reasoning",
+      "suggestion": "Suggestion",
+      "structured": "Structured Result",
+      "feeWarning": "7-day Redemption Fee Risk"
+    },
+    "busy": "Cloud LLM busy, please retry later"
+  },
+  "watchlist": {
+    "title": "Watchlist",
+    "stockSection": "Watchlist Stocks",
+    "fundSection": "Watchlist Funds",
+    "addStock": "Add Stock",
+    "addFund": "Add Fund",
+    "inputPlaceholder": "Enter stock/fund code",
+    "add": "Add",
+    "adding": "Adding...",
+    "remove": "Remove",
+    "analyze": "Analyze",
+    "empty": "No watchlist items",
+    "imageUpload": {
+      "title": "Image Recognition",
+      "uploadButton": "Upload Screenshot",
+      "uploading": "Recognizing...",
+      "preview": "Image Preview",
+      "parsedItems": "Detected Items",
+      "confirmAdd": "Confirm Add",
+      "cancel": "Cancel",
+      "noItems": "No valid codes detected",
+      "dragHint": "Click or drag to upload holdings screenshot"
+    },
+    "code": "Code",
+    "name": "Name",
+    "type": "Type",
+    "stock": "Stock",
+    "fund": "Fund",
+    "duplicate": "This item is already in the watchlist",
+    "addFailed": "Failed to add",
+    "purchaseInfo": {
+      "title": "Purchase Info (Optional)",
+      "amount": "Purchase Amount (CNY)",
+      "nav": "Purchase NAV",
+      "date": "Purchase Date",
+      "shares": "Shares Held",
+      "expand": "Fill Purchase Info",
+      "collapse": "Hide Purchase Info"
+    },
+    "fundHoldings": {
+      "title": "Fund Holdings",
+      "code": "Fund Code",
+      "name": "Fund Name",
+      "purchaseNav": "Purchase NAV",
+      "currentNav": "Current NAV",
+      "navDate": "NAV Date",
+      "dailyReturn": "Daily Return",
+      "shares": "Shares",
+      "amount": "Amount",
+      "totalPnl": "Total P&L",
+      "totalPnlPct": "Return %",
+      "noHoldings": "No fund holdings data",
+      "refresh": "Refresh Holdings",
+      "aiAnalysis": "AI Analysis",
+      "analyzing": "Analyzing..."
+    }
+  },
+  "components": {
+    "autoRefresh": {
+      "on": "Auto-refresh: ON",
+      "off": "Auto-refresh: OFF",
+      "paused": "Paused",
+      "pausedTitle": "AI analysis in progress, auto-refresh paused",
+      "onTitle": "Disable auto-refresh",
+      "offTitle": "Enable auto-refresh"
+    },
+    "dataFreshness": {
+      "fresh": "Data fresh",
+      "stale": "Data stale",
+      "old": "Data outdated"
+    },
+    "errorRetry": {
+      "defaultError": "Failed to load data",
+      "retrying": "Retrying...",
+      "retry": "Retry"
+    },
+    "search": {
+      "placeholder": "Search...",
+      "clear": "Clear",
+      "recentSearches": "Recent Searches",
+      "searching": "Searching...",
+      "noResults": "No results"
+    },
+    "technicalChart": {
+      "title": "Technical Indicators",
+      "noData": "No technical data",
+      "movingAverages": "Moving Averages",
+      "macd": "MACD",
+      "signal": "Signal",
+      "histogram": "Histogram",
+      "kdj": "KDJ",
+      "bollinger": "Bollinger Bands",
+      "upper": "Upper",
+      "middle": "Middle",
+      "lower": "Lower",
+      "rsiOversold": "Oversold",
+      "rsiNeutral": "Neutral",
+      "rsiOverbought": "Overbought"
+    }
+  },
+  "globalSearch": {
+    "placeholder": "Search stock, fund code or name...",
+    "noResults": "No results found",
+    "hint": "Enter code to analyze directly",
+    "recentSearches": "Recent Searches",
+    "watchlist": "Watchlist",
+    "search": "Search",
+    "close": "Close"
+  },
+  "export": {
+    "json": "Export JSON",
+    "markdown": "Export Markdown",
+    "exporting": "Exporting..."
+  },
+  "comparison": {
+    "title": "Analysis Comparison",
+    "close": "Close",
+    "noItems": "Select at least 2 items to compare",
+    "field": "Field",
+    "target": "Target",
+    "trend": "Trend",
+    "judgment": "Judgment",
+    "sentiment": "Sentiment Score",
+    "confidence": "Confidence",
+    "reasoning": "Analysis Logic",
+    "keyFactors": "Key Factors",
+    "riskWarnings": "Risk Warnings",
+    "suggestion": "Suggestion",
+    "compare": "Compare Selected",
+    "selected": "{{count}} selected",
+    "maxItems": "Maximum 3 items for comparison"
+  },
+  "analysisHistory": {
+    "title": "Analysis History",
+    "filterAll": "All",
+    "filterStock": "Stock",
+    "filterFund": "Fund",
+    "empty": "No analysis history",
+    "emptyDescription": "Run an analysis to see history here",
+    "noSummary": "No summary",
+    "result": "Analysis Result",
+    "sentimentScore": "Sentiment Score",
+    "reasoning": "Analysis Logic",
+    "suggestion": "Operation Suggestion",
+    "keyFactors": "Key Factors",
+    "riskWarnings": "Risk Warnings",
+    "selectForCompare": "Select",
+    "compareSelected": "Compare Selected",
+    "selectedCount": "{{count}} selected",
+    "searchPlaceholder": "Search target name or code...",
+    "dateFilter": {
+      "all": "All",
+      "today": "Today",
+      "week": "Last 7 Days",
+      "month": "Last 30 Days"
+    },
+    "resultCount": "{{count}} records"
+  },
+  "errorBoundary": {
+    "title": "Something went wrong",
+    "description": "Sorry, the page encountered an error.",
+    "reload": "Reload Page",
+    "goHome": "Go to Dashboard",
+    "showDetails": "Show Details",
+    "hideDetails": "Hide Details"
+  },
+  "common": {
+    "loading": "Loading",
+    "error": "Error",
+    "empty": "No data",
+    "unknown": "Unknown"
+  },
+  "toast": {
+    "close": "Close",
+    "addSuccess": "Added to watchlist",
+    "addFailed": "Failed to add",
+    "duplicate": "This item is already in the watchlist",
+    "exportSuccess": "Export successful",
+    "analysisFailed": "Analysis failed",
+    "apiKeyRequired": "Please configure your LLM API Key in Settings first"
+  },
+  "dataSource": {
+    "title": "Data Source Status",
+    "adapter": "Adapter",
+    "status": "Status",
+    "healthy": "Healthy",
+    "failing": "Failing",
+    "successCount": "Success Count",
+    "failureCount": "Failure Count",
+    "avgLatency": "Avg Latency",
+    "lastError": "Last Error",
+    "lastSuccess": "Last Success",
+    "noAdapters": "No data source info",
+    "mockWarning": "Currently using mock data"
+  },
+  "keyboardShortcuts": {
+    "hint": "Shortcuts",
+    "refresh": "Refresh data",
+    "search": "Global search"
+  },
+  "theme": {
+    "dark": "Dark Mode",
+    "light": "Light Mode",
+    "toggle": "Toggle theme"
+  }
+}

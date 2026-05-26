@@ -1,0 +1,56 @@
+app:
+  name: micro-quant-pipeline
+  mode: paper
+  database_path: data/finance_agent.sqlite
+  paper_log_path: data/paper_executions.jsonl
+
+market:
+  vix_symbol: "^VIX"
+  allow_mock_vix: true
+  mock_vix_value: 18.5
+
+confidence_thresholds:
+  default: 0.65
+  broad_index: 0.60
+  high_volatility: 0.70
+
+assets:
+  "000510":
+    name: 中证A500
+    category: broad_index
+    fund_class: A
+  "008282":
+    name: 国泰半导体C
+    category: high_volatility
+    fund_class: C
+  "SEMICONDUCTOR_C":
+    name: 半导体C
+    category: high_volatility
+    fund_class: C
+
+webhook:
+  enabled: false
+  type: null
+  url: null
+  timeout_seconds: 3
+
+ollama:
+  base_url: https://token-plan-cn.xiaomimimo.com
+  generate_path: /v1
+  model: mimo-v2.5-pro
+  timeout_seconds: 60
+  api_key: ""
+
+data_sources:
+  proxy:
+    http: ""
+    https: ""
+  fallback:
+    max_retries: 1
+    timeout_seconds: 10
+  akshare:
+    enabled: true
+    stock_cache_ttl_seconds: 60
+    sector_cache_ttl_seconds: 60
+    fund_cache_ttl_seconds: 300
+    request_timeout_seconds: 15
